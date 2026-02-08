@@ -1,0 +1,1190 @@
+<!DOCTYPE html>
+<html lang="ru">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CRYPTOVERSE | Платформа 3.0</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="script.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <!-- НОВОЕ: Подключаем конфигурацию Firebase -->
+    <script src="firebase-config.js"></script>
+
+</head>
+
+<body>
+    <div class="container">
+        <!-- Compact Header -->
+        <div class="compact-header">
+            <div class="logo">
+                <i class="fas fa-skyscraper"></i>
+                <h1>CRYPTOVERSE</h1>
+            </div>
+            <div class="header-right">
+                <div class="balance-compact">
+                    <div class="balance-content">
+                        <div class="balance-amount" id="balance">0,00 SKY</div>
+                        <div class="balance-usd">≈ $<span id="balance-usd">0.00</span></div>
+                    </div>
+                    <button class="btn btn-primary" id="btn-deposit">
+                        <i class="fas fa-plus"></i>
+                    </button>
+                </div>
+                <button class="notification-btn" id="notification-btn">
+                    <i class="fas fa-bell"></i>
+                    <span class="notification-badge">3</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- ==================== ЗАКРЕПЛЕННЫЕ СООБЩЕНИЯ ==================== -->
+        <div class="pinned-message-container" id="pinned-message-container">
+            <!-- Закрепленные сообщения будут добавляться здесь -->
+        </div>
+
+        <!-- ==================== НОВОСТНАЯ ЛЕНТА ==================== -->
+        <div class="news-ticker">
+            <div class="news-label">LIVE</div>
+            <div class="news-content">
+                📢 Башня Тысячелетия: собрано $<span id="total-raised">0.00</span> из $5.5B •
+                SKY токен достиг нового рекорда - $<span id="sky-price-ticker">0.001</span> за токен •
+                Внимание: платформа будет обновлена 20 января с 02:00 до 04:00 МСК •
+                Новый функционал казино "Колесо везения" уже доступен! •
+            </div>
+        </div>
+
+        <!-- Content Sections -->
+
+        <!-- Home Section -->
+        <div id="home-section" class="content-section active">
+            <!-- Статистика платформы -->
+            <div class="platform-statistics">
+                <h3
+                    style="color: var(--secondary); margin-bottom: 15px; display: flex; align-items: center; gap: 8px; font-size: 1rem;">
+                    <i class="fas fa-chart-line"></i> СТАТИСТИКА ПЛАТФОРМЫ
+                </h3>
+                <div class="stat-row">
+                    <div class="stat-row-label">Общий капитал проектов:</div>
+                    <div class="stat-row-value" id="total-capital">$5.2B</div>
+                </div>
+                <div class="stat-row">
+                    <div class="stat-row-label">Инвесторов онлайн:</div>
+                    <div class="stat-row-value" id="online-investors">24,587</div>
+                </div>
+                <div class="stat-row">
+                    <div class="stat-row-label">SKY токенов в обороте:</div>
+                    <div class="stat-row-value" id="sky-in-circulation">100.0M</div>
+                </div>
+                <div class="stat-row">
+                    <div class="stat-row-label">Общий объём торгов:</div>
+                    <div class="stat-row-value" id="total-trade-volume">$8.5M</div>
+                </div>
+                <div class="stat-row">
+                    <div class="stat-row-label">Средняя доходность:</div>
+                    <div class="stat-row-value" id="avg-yield">8.7%</div>
+                </div>
+            </div>
+
+            <!-- Основной проект на главной -->
+            <div class="card project-with-chart">
+                <div class="card-title">
+                    <h3 style="font-size: 1.1rem;"><i class="fas fa-skyscraper"></i> БАШНЯ ТЫСЯЧЕЛЕТИЯ</h3>
+                    <div style="color: var(--success); font-weight: bold; font-size: 0.85rem;">
+                        <i class="fas fa-fire"></i> ТРЕНД
+                    </div>
+                </div>
+
+                <div class="home-project-content">
+                    <div class="home-project-text">
+                        <div style="margin-bottom: 15px;">
+                            <h4 style="color: var(--secondary); margin-bottom: 8px; font-size: 1rem;">САМОЕ ВЫСОКОЕ
+                                ЗДАНИЕ В МИРЕ</h4>
+                            <p class="project-info-text" style="color: var(--gray);">
+                                Башня Тысячелетия высотой 1100 метров станет самым высоким зданием в мире.
+                                Проект включает офисы класса А+, элитные апартаменты, отель 5* и крупнейшую в мире
+                                смотровую площадку.
+                            </p>
+                            <p class="project-info-text"
+                                style="color: var(--warning); margin-top: 10px; font-weight: bold;">
+                                Важная информация: После выхода проекта на прибыль в 2035 году, вы сможете продать свою
+                                долю обратно компании за 125% от стоимости инвестиций.
+                                Однако вы уже сейчас можете продать свою долю на рынке другим пользователям.
+                            </p>
+                        </div>
+
+                        <div class="investment-progress">
+                            <div
+                                style="display: flex; justify-content: space-between; margin-bottom: 5px; font-size: 0.9rem;">
+                                <span>Собрано средств:</span>
+                                <span style="color: var(--success); font-weight: bold;" id="home-raised">$0.00</span>
+                            </div>
+                            <div
+                                style="height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; width: 100%;">
+                                <div id="home-progress-bar"
+                                    style="width: 0%; height: 100%; background: linear-gradient(90deg, var(--secondary), var(--success));">
+                                </div>
+                            </div>
+                            <div
+                                style="display: flex; justify-content: space-between; font-size: 0.8rem; color: var(--gray); margin-top: 5px;">
+                                <span id="home-progress-text">0% завершено</span>
+                                <span>Цель: $5.5B</span>
+                            </div>
+                        </div>
+
+                        <div class="investment-info-grid">
+                            <div class="investment-info-item">
+                                <div style="color: var(--secondary); font-size: 1rem; font-weight: bold;">8.3%</div>
+                                <div style="color: var(--gray); font-size: 0.8rem;">Доходность</div>
+                            </div>
+                            <div class="investment-info-item">
+                                <div style="color: var(--secondary); font-size: 1rem; font-weight: bold;">15 лет</div>
+                                <div style="color: var(--gray); font-size: 0.8rem;">Срок проекта</div>
+                            </div>
+                            <div class="investment-info-item">
+                                <div style="color: var(--secondary); font-size: 1rem; font-weight: bold;">2035</div>
+                                <div style="color: var(--gray); font-size: 0.8rem;">Выход на прибыль</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="home-project-image">
+                        <div style="font-size: 3rem; color: var(--secondary); margin-bottom: 10px;">
+                            <i class="fas fa-building"></i>
+                        </div>
+                        <div style="font-size: 1.2rem; color: var(--light); margin-bottom: 5px;">0 этаж</div>
+                        <div style="color: var(--gray); margin-bottom: 15px; font-size: 0.85rem;">из 220 построено</div>
+
+                        <button class="btn btn-success invest-button-fix" onclick="showSection('projects')">
+                            <i class="fas fa-chart-line"></i> ПОДРОБНЕЕ
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Мои проекты с прибылью -->
+            <div class="card my-projects-section">
+                <div class="card-title">
+                    <h3 style="font-size: 1.1rem;"><i class="fas fa-star"></i> МОИ ПРОЕКТЫ</h3>
+                </div>
+
+                <div id="my-projects-list">
+                    <!-- Башня Тысячелетия -->
+                    <div class="my-project-item">
+                        <div
+                            style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; flex-wrap: wrap; gap: 8px;">
+                            <div style="flex: 1; min-width: 200px;">
+                                <h4 style="color: var(--secondary); margin-bottom: 5px; font-size: 1rem;">Башня
+                                    Тысячелетия</h4>
+                                <p style="color: var(--gray); font-size: 0.85rem;">
+                                    Ваша доля: <span style="color: var(--success); font-weight: bold;"
+                                        id="my-share-percentage">0%</span> •
+                                    Инвестировано: <span style="color: var(--secondary);" id="my-invested-amount">0
+                                        SKY</span>
+                                </p>
+                            </div>
+                            <div
+                                style="color: var(--warning); font-weight: bold; text-align: right; font-size: 0.9rem;">
+                                <i class="fas fa-coins"></i> <span id="my-pending-profit">0 SKY</span>
+                            </div>
+                        </div>
+
+                        <!-- Секция прибыли (сворачиваемая) -->
+                        <div class="profit-section" id="profit-section">
+                            <div class="profit-header" onclick="toggleProfitSection()">
+                                <h4 style="margin: 0; font-size: 0.95rem;">
+                                    <i class="fas fa-money-bill-wave"></i> ВЫПЛАТА ПО ПРОЕКТУ
+                                </h4>
+                                <div class="profit-header-controls">
+                                    <span class="profit-timer" id="profit-timer">30 дней</span>
+                                    <button class="profit-toggle-btn" id="profit-toggle-btn">
+                                        <i class="fas fa-chevron-down"></i>
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="profit-content expanded" id="profit-content">
+                                <div class="profit-distribution">
+                                    <div class="profit-item">
+                                        <div style="color: var(--gray); font-size: 0.85rem;">Прошлый месяц</div>
+                                        <div style="color: var(--success); font-size: 1rem; font-weight: bold;"
+                                            id="last-month-profit">$20.0M</div>
+                                        <div style="color: var(--gray); font-size: 0.75rem;">Прибыль проекта</div>
+                                    </div>
+
+                                    <div class="profit-item">
+                                        <div style="color: var(--gray); font-size: 0.85rem;">Ваша доля</div>
+                                        <div style="color: var(--warning); font-size: 1rem; font-weight: bold;"
+                                            id="my-profit-share">0 SKY</div>
+                                        <div style="color: var(--gray); font-size: 0.75rem;">≈ <span
+                                                id="my-profit-usd">$0</span></div>
+                                    </div>
+
+                                    <div class="profit-item">
+                                        <div style="color: var(--gray); font-size: 0.85rem;">Следующая выплата</div>
+                                        <div style="color: var(--accent); font-size: 1rem; font-weight: bold;"
+                                            id="next-profit-estimate">$0</div>
+                                        <div style="color: var(--gray); font-size: 0.75rem;">Ожидаемая прибыль</div>
+                                    </div>
+                                </div>
+
+                                <button class="btn btn-warning btn-block profit-claim-btn" id="btn-claim-profit"
+                                    onclick="claimProfit('millennium-tower')" disabled>
+                                    <i class="fas fa-hand-holding-usd"></i> ОФОРМИТЬ ВЫПЛАТУ
+                                </button>
+                                <div style="color: var(--gray); font-size: 0.75rem; text-align: center; margin-top: 8px;"
+                                    id="profit-claim-info">
+                                    Следующая выплата через: <span id="next-payout-timer">30 дней</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Информация о других проектах -->
+                    <div style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 12px; margin-top: 15px;">
+                        <h4 style="color: var(--secondary); margin-bottom: 10px; font-size: 0.95rem;">ИНФОРМАЦИЯ О
+                            ВЫПЛАТАХ</h4>
+                        <p style="color: var(--gray); line-height: 1.4; font-size: 0.85rem;">
+                            • Ежемесячная прибыль распределяется пропорционально доле в проекте<br>
+                            • Выплаты производятся автоматически каждые 30 дней<br>
+                            • Прибыль рассчитывается от чистой операционной прибыли проекта<br>
+                            • Минимальная сумма для вывода: 100 SKY<br>
+                            • Все выплаты в SKY токенах по текущему рыночному курсу<br>
+                            • <strong>После выхода проекта на прибыль в 2035 году</strong> вы сможете продать свою долю
+                            обратно компании за 125% от стоимости инвестиций<br>
+                            • Вы уже сейчас можете продать свою долю на рынке другим пользователям
+                        </p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Статистика платформы -->
+            <div class="market-stats">
+                <div class="market-stat">
+                    <div class="market-stat-value" id="total-users">3.2M</div>
+                    <div class="market-stat-label">Инвесторов</div>
+                </div>
+                <div class="market-stat">
+                    <div class="market-stat-value" id="daily-volume">$8.5M</div>
+                    <div class="market-stat-label">Объём за 24ч</div>
+                </div>
+                <div class="market-stat">
+                    <div class="market-stat-value" id="sky-price">$0.001</div>
+                    <div class="market-stat-label">Цена SKY</div>
+                </div>
+                <div class="market-stat">
+                    <div class="market-stat-value" id="project-count">1</div>
+                    <div class="market-stat-label">Активных проектов</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Projects Section -->
+        <div id="projects-section" class="content-section">
+            <div class="card">
+                <div class="card-title">
+                    <h3 style="font-size: 1.1rem;"><i class="fas fa-building"></i> ИНВЕСТИЦИОННЫЕ ПРОЕКТЫ</h3>
+                </div>
+
+                <!-- Все проекты -->
+                <div class="projects-list" id="projects-list">
+                    <!-- Башня Тысячелетия -->
+                    <div class="project-item" data-project="millennium-tower"
+                        onclick="showFullProjectDetail('millennium-tower')">
+                        <div class="project-info">
+                            <h4 style="font-size: 1rem;">Башня Тысячелетия</h4>
+                            <p style="font-size: 0.85rem;">Самое высокое здание в мире (1100м)</p>
+                            <div style="display: flex; gap: 8px; margin-top: 5px; flex-wrap: wrap;">
+                                <span
+                                    style="background: var(--success); color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem;">🏆
+                                    ЛИДЕР</span>
+                                <span
+                                    style="background: var(--accent); color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem;">🔥
+                                    ГОРЯЧЕЕ</span>
+                                <span
+                                    style="background: var(--warning); color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.75rem;">💰
+                                    ПРИБЫЛЬ</span>
+                            </div>
+                        </div>
+                        <div class="project-raised">
+                            <div class="project-raised-value" id="project-raised-display-1">$0.00</div>
+                            <div class="project-raised-label">из $5.5B</div>
+                        </div>
+                        <div class="project-progress">
+                            <div class="progress-circle">
+                                <svg width="50" height="50" viewBox="0 0 50 50">
+                                    <circle cx="25" cy="25" r="20" fill="none" stroke="rgba(255,255,255,0.1)"
+                                        stroke-width="4" />
+                                    <circle id="project-progress-circle-1" cx="25" cy="25" r="20" fill="none"
+                                        stroke="var(--secondary)" stroke-width="4" stroke-linecap="round"
+                                        stroke-dasharray="126" stroke-dashoffset="126" />
+                                </svg>
+                                <div class="progress-value" id="project-progress-value-1">0%</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Exchange Section -->
+        <div id="exchange-section" class="content-section">
+            <div class="exchange-container">
+                <div>
+                    <div class="card">
+                        <div class="card-title">
+                            <h3 style="font-size: 1.1rem;"><i class="fas fa-coins"></i> ТОКЕНЫ ДЛЯ ТОРГОВЛИ</h3>
+                            <div style="color: var(--gray); font-size: 0.85rem;">
+                                Объём за 24ч: <span style="color: var(--success);">$8.5M</span>
+                            </div>
+                        </div>
+
+                        <div class="crypto-grid">
+                            <div class="crypto-card selected" data-coin="dogemoon">
+                                <div class="crypto-header">
+                                    <div class="crypto-name">
+                                        <div class="crypto-icon"
+                                            style="background: linear-gradient(45deg, #ffaa00, #cc8800);">
+                                            DGM
+                                        </div>
+                                        <div>
+                                            <div style="font-weight: bold; font-size: 0.95rem;">DogeMoon</div>
+                                            <div style="color: var(--gray); font-size: 0.8rem;">DGM/SKY</div>
+                                        </div>
+                                    </div>
+                                    <div class="crypto-price price-up" id="dogemoon-price" style="font-size: 1rem;">125
+                                        SKY</div>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
+                                    <span>Изменение:</span>
+                                    <span class="price-up" id="dogemoon-change">+15.7%</span>
+                                </div>
+                            </div>
+
+                            <div class="crypto-card" data-coin="pepe">
+                                <div class="crypto-header">
+                                    <div class="crypto-name">
+                                        <div class="crypto-icon"
+                                            style="background: linear-gradient(45deg, #00d46a, #00a84e);">
+                                            PEP
+                                        </div>
+                                        <div>
+                                            <div style="font-weight: bold; font-size: 0.95rem;">PepeCoin</div>
+                                            <div style="color: var(--gray); font-size: 0.8rem;">PEP/SKY</div>
+                                        </div>
+                                    </div>
+                                    <div class="crypto-price price-down" id="pepe-price" style="font-size: 1rem;">8.5
+                                        SKY</div>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
+                                    <span>Изменение:</span>
+                                    <span class="price-down" id="pepe-change">-3.2%</span>
+                                </div>
+                            </div>
+
+                            <div class="crypto-card" data-coin="shiba">
+                                <div class="crypto-header">
+                                    <div class="crypto-name">
+                                        <div class="crypto-icon"
+                                            style="background: linear-gradient(45deg, #ff3366, #cc0044);">
+                                            SHB
+                                        </div>
+                                        <div>
+                                            <div style="font-weight: bold; font-size: 0.95rem;">ShibaInuBSC</div>
+                                            <div style="color: var(--gray); font-size: 0.8rem;">SHB/SKY</div>
+                                        </div>
+                                    </div>
+                                    <div class="crypto-price price-up" id="shiba-price" style="font-size: 1rem;">0.24
+                                        SKY</div>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
+                                    <span>Изменение:</span>
+                                    <span class="price-up" id="shiba-change">+8.9%</span>
+                                </div>
+                            </div>
+
+                            <div class="crypto-card" data-coin="bonk">
+                                <div class="crypto-header">
+                                    <div class="crypto-name">
+                                        <div class="crypto-icon"
+                                            style="background: linear-gradient(45deg, #ff6b6b, #ff3838);">
+                                            BNK
+                                        </div>
+                                        <div>
+                                            <div style="font-weight: bold; font-size: 0.95rem;">BonkSolana</div>
+                                            <div style="color: var(--gray); font-size: 0.8rem;">BNK/SKY</div>
+                                        </div>
+                                    </div>
+                                    <div class="crypto-price price-up" id="bonk-price" style="font-size: 1rem;">180 SKY
+                                    </div>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
+                                    <span>Изменение:</span>
+                                    <span class="price-up" id="bonk-change">+32.4%</span>
+                                </div>
+                            </div>
+
+                            <div class="crypto-card" data-coin="floki">
+                                <div class="crypto-header">
+                                    <div class="crypto-name">
+                                        <div class="crypto-icon"
+                                            style="background: linear-gradient(45deg, #8a2be2, #6a1bb2);">
+                                            FLK
+                                        </div>
+                                        <div>
+                                            <div style="font-weight: bold; font-size: 0.95rem;">FlokiMarvin</div>
+                                            <div style="color: var(--gray); font-size: 0.8rem;">FLK/SKY</div>
+                                        </div>
+                                    </div>
+                                    <div class="crypto-price price-down" id="floki-price" style="font-size: 1rem;">1.2
+                                        SKY</div>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; font-size: 0.85rem;">
+                                    <span>Изменение:</span>
+                                    <span class="price-down" id="floki-change">-1.5%</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Trading Terminal -->
+                        <div style="margin-top: 20px;">
+                            <h4 style="color: var(--secondary); margin-bottom: 12px; font-size: 1rem;">ТОРГОВЫЙ ТЕРМИНАЛ
+                            </h4>
+                            <div style="display: grid; grid-template-columns: 1fr; gap: 15px;">
+                                <div>
+                                    <div class="form-group">
+                                        <label>Купить <span id="buy-coin-name">DGM</span>:</label>
+                                        <input type="number" id="buy-amount" placeholder="Количество" value="10" min="1"
+                                            style="font-size: 0.9rem;">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Цена (SKY):</label>
+                                        <div
+                                            style="padding: 12px; background: rgba(0,0,0,0.3); border-radius: 10px; color: var(--success); font-weight: bold; text-align: center; font-size: 0.95rem;">
+                                            <span id="buy-price-display">125 SKY</span>
+                                            <input type="hidden" id="buy-price" value="125">
+                                        </div>
+                                        <div
+                                            style="color: var(--gray); font-size: 0.75rem; margin-top: 5px; text-align: center;">
+                                            Рыночная цена
+                                        </div>
+                                    </div>
+                                    <div
+                                        style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 10px; margin-bottom: 12px;">
+                                        <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
+                                            <span>Стоимость:</span>
+                                            <span id="buy-cost" style="color: var(--success);">1,250 SKY</span>
+                                        </div>
+                                        <div
+                                            style="display: flex; justify-content: space-between; margin-top: 5px; font-size: 0.8rem; color: var(--gray);">
+                                            <span>Комиссия (0.5%):</span>
+                                            <span id="buy-fee">6.25 SKY</span>
+                                        </div>
+                                    </div>
+                                    <button class="btn btn-success btn-block" id="btn-buy" style="font-size: 0.9rem;">
+                                        <i class="fas fa-arrow-up"></i> КУПИТЬ
+                                    </button>
+                                </div>
+                                <div>
+                                    <div class="form-group">
+                                        <label>Продать <span id="sell-coin-name">DGM</span>:</label>
+                                        <input type="number" id="sell-amount" placeholder="Количество" value="10"
+                                            min="1" style="font-size: 0.9rem;">
+                                    </div>
+                                    <div class="form-group">
+                                        <label>Цена (SKY):</label>
+                                        <div
+                                            style="padding: 12px; background: rgba(0,0,0,0.3); border-radius: 10px; color: var(--success); font-weight: bold; text-align: center; font-size: 0.95rem;">
+                                            <span id="sell-price-display">125 SKY</span>
+                                            <input type="hidden" id="sell-price" value="125">
+                                        </div>
+                                        <div
+                                            style="color: var(--gray); font-size: 0.75rem; margin-top: 5px; text-align: center;">
+                                            Рыночная цена
+                                        </div>
+                                    </div>
+                                    <div
+                                        style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 10px; margin-bottom: 12px;">
+                                        <div style="display: flex; justify-content: space-between; font-size: 0.9rem;">
+                                            <span>Вы получите:</span>
+                                            <span id="sell-revenue" style="color: var(--accent);">1,243.75 SKY</span>
+                                        </div>
+                                        <div
+                                            style="display: flex; justify-content: space-between; margin-top: 5px; font-size: 0.8rem; color: var(--gray);">
+                                            <span>Комиссия (0.5%):</span>
+                                            <span id="sell-fee">6.25 SKY</span>
+                                        </div>
+                                    </div>
+                                    <button class="btn btn-danger btn-block" id="btn-sell" style="font-size: 0.9rem;">
+                                        <i class="fas fa-arrow-down"></i> ПРОДАТЬ
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Order Book & Portfolio -->
+                <div class="exchange-tables-container">
+                    <div class="card">
+                        <div class="card-title">
+                            <h3 style="font-size: 1.1rem;"><i class="fas fa-book"></i> КНИГА ОРДЕРОВ</h3>
+                        </div>
+                        <div id="order-book" style="max-height: 250px; overflow-y: auto;">
+                            <div class="order-row order-row-header">
+                                <div>ТИП</div>
+                                <div>ЦЕНА (SKY)</div>
+                                <div>ОБЪЕМ</div>
+                            </div>
+                            <!-- Ордера добавляются через JS -->
+                        </div>
+                    </div>
+
+                    <div class="card" style="margin-top: 15px;">
+                        <div class="card-title">
+                            <h3 style="font-size: 1.1rem;"><i class="fas fa-wallet"></i> ВАШ ПОРТФЕЛЬ</h3>
+                        </div>
+                        <div id="portfolio-list" style="max-height: 200px; overflow-y: auto;">
+                            <div class="order-row order-row-header">
+                                <div>ТОКЕН</div>
+                                <div>БАЛАНС</div>
+                                <div>СТОИМОСТЬ (SKY)</div>
+                            </div>
+                            <!-- Портфель добавляется через JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Casino Section -->
+        <div id="casino-section" class="content-section">
+            <div class="card">
+                <div class="card-title">
+                    <h3 style="font-size: 1.1rem;"><i class="fas fa-dice"></i> КАЗИНО</h3>
+                    <div style="color: var(--warning); font-size: 0.85rem;">
+                        <i class="fas fa-coins"></i> Комиссия казино: 5%
+                    </div>
+                </div>
+
+                <!-- Список игр -->
+                <div class="casino-games-grid">
+                    <!-- Колесо везения -->
+                    <div class="game-card" onclick="openWheelGame()">
+                        <i class="fas fa-wheel"></i>
+                        <h4 style="font-size: 1rem;">Колесо везения</h4>
+                        <p style="font-size: 0.85rem;">Делайте ставки и занимайте процент колеса. Призовой фонд 95% от
+                            всех ставок.</p>
+                        <div style="margin-top: 12px; color: var(--gray); font-size: 0.8rem;">
+                            <i class="fas fa-users"></i> Игроков: <span id="wheel-players-count-preview">0</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Casino Stats -->
+            <div class="card" style="margin-top: 15px;">
+                <div class="card-title">
+                    <h3 style="font-size: 1.1rem;"><i class="fas fa-chart-bar"></i> СТАТИСТИКА КАЗИНО</h3>
+                </div>
+                <div class="casino-stats">
+                    <div>
+                        <div style="font-size: 2rem; color: var(--accent);" id="casino-total-wins">0</div>
+                        <div style="color: var(--gray); font-size: 0.85rem;">Выигрышей всего</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 2rem; color: var(--success);" id="casino-total-won">0 SKY</div>
+                        <div style="color: var(--gray); font-size: 0.85rem;">Выиграно всего</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 2rem; color: var(--warning);">5%</div>
+                        <div style="color: var(--gray); font-size: 0.85rem;">Комиссия казино</div>
+                    </div>
+                    <div>
+                        <div style="font-size: 2rem; color: var(--secondary);" id="casino-biggest-win">0 SKY</div>
+                        <div style="color: var(--gray); font-size: 0.85rem;">Крупнейший выигрыш</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Earn Section (Ads only) -->
+        <div id="earn-section" class="content-section">
+            <div class="earn-grid">
+                <!-- Watch Ads -->
+                <div class="earn-card">
+                    <div class="earn-icon">
+                        <i class="fas fa-ad"></i>
+                    </div>
+                    <h3 style="font-size: 1.2rem;">СМОТРЕТЬ РЕКЛАМУ</h3>
+                    <p style="color: var(--gray); margin: 15px 0; font-size: 0.9rem;">
+                        Смотрите короткую рекламу и получаете 3 SKY токена за каждый просмотр.
+                    </p>
+
+                    <div style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 12px; margin: 20px 0;">
+                        <div
+                            style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; text-align: center;">
+                            <div>
+                                <div style="color: var(--warning); font-size: 1rem; font-weight: bold;">3 SKY</div>
+                                <div style="color: var(--gray); font-size: 0.8rem;">За 1 рекламу</div>
+                            </div>
+                            <div>
+                                <div style="color: var(--success); font-size: 1rem; font-weight: bold;">50</div>
+                                <div style="color: var(--gray); font-size: 0.8rem;">Доступно сегодня</div>
+                            </div>
+                            <div>
+                                <div style="color: var(--secondary); font-size: 1rem; font-weight: bold;">150 SKY</div>
+                                <div style="color: var(--gray); font-size: 0.8rem;">Максимум в день</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button class="btn btn-warning btn-block" id="btn-watch-random-ad" style="font-size: 0.9rem;">
+                        <i class="fas fa-play-circle"></i> СМОТРЕТЬ РЕКЛАМУ (+3 SKY)
+                    </button>
+                </div>
+
+                <!-- Stats -->
+                <div class="earn-card">
+                    <div class="earn-icon">
+                        <i class="fas fa-chart-line"></i>
+                    </div>
+                    <h3 style="font-size: 1.2rem;">ВАША СТАТИСТИКА</h3>
+
+                    <div style="margin: 20px 0;">
+                        <div
+                            style="display: flex; justify-content: space-between; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); font-size: 0.9rem;">
+                            <span>Просмотрено сегодня:</span>
+                            <span style="color: var(--success); font-weight: bold;" id="ads-watched">0/50</span>
+                        </div>
+                        <div
+                            style="display: flex; justify-content: space-between; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid rgba(255,255,255,0.1); font-size: 0.9rem;">
+                            <span>Заработано сегодня:</span>
+                            <span style="color: var(--success); font-weight: bold;" id="earned-today">0 SKY</span>
+                        </div>
+                        <div
+                            style="display: flex; justify-content: space-between; margin-bottom: 12px; font-size: 0.9rem;">
+                            <span>Всего заработано:</span>
+                            <span style="color: var(--secondary); font-weight: bold;" id="total-earned">0 SKY</span>
+                        </div>
+                    </div>
+
+                    <div style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 12px; margin-top: 20px;">
+                        <h4 style="color: var(--secondary); margin-bottom: 12px; font-size: 0.95rem;">СОВЕТЫ</h4>
+                        <ul
+                            style="color: var(--gray); line-height: 1.5; padding-left: 18px; margin: 0; font-size: 0.85rem;">
+                            <li>Смотрите все доступные рекламы ежедневно</li>
+                            <li>Новая реклама появляется каждый час</li>
+                            <li>Приглашайте друзей и получайте бонусы</li>
+                            <li>Чем больше смотрите, тем выше доход</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Market Section -->
+        <div id="market-section" class="content-section">
+            <div class="market-section-grid">
+                <!-- Создать сделку -->
+                <div class="card">
+                    <div class="card-title">
+                        <h3 style="font-size: 1.1rem;"><i class="fas fa-plus-circle"></i> СОЗДАТЬ СДЕЛКУ</h3>
+                    </div>
+
+                    <div class="form-group">
+                        <label><i class="fas fa-exchange-alt"></i> Тип сделки:</label>
+                        <select id="deal-type" style="font-size: 0.9rem;">
+                            <option value="sell">Продажа</option>
+                            <option value="buy">Покупка</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label><i class="fas fa-tag"></i> Что продаёте/покупаете:</label>
+                        <select id="deal-asset" style="font-size: 0.9rem;">
+                            <option value="dogemoon">DogeMoon токены</option>
+                            <option value="pepe">PepeCoin токены</option>
+                            <option value="shiba">ShibaInuBSC токены</option>
+                            <option value="bonk">BonkSolana токены</option>
+                            <option value="floki">FlokiMarvin токены</option>
+                            <option value="millennium-share">Доля в Башне Тысячелетия</option>
+                            <option value="other">Другое</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group" id="quantity-group">
+                        <label><i class="fas fa-hashtag"></i> Количество (<span
+                                id="quantity-unit">штуки</span>):</label>
+                        <input type="number" id="deal-quantity" placeholder="Введите количество" min="1" step="1"
+                            value="1" style="font-size: 0.9rem;">
+                    </div>
+
+                    <div class="form-group">
+                        <label><i class="fas fa-dollar-sign"></i> Цена за <span id="price-unit">1 шт.</span>
+                            (SKY):</label>
+                        <input type="number" id="deal-price" placeholder="Введите цену" min="0.001" step="0.001"
+                            value="1" style="font-size: 0.9rem;">
+                    </div>
+
+                    <div class="form-group">
+                        <label><i class="fas fa-cut"></i> Можно купить частями:</label>
+                        <select id="deal-partial" style="font-size: 0.9rem;">
+                            <option value="yes">Да, можно купить часть</option>
+                            <option value="no">Нет, только целиком</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label><i class="fas fa-comment"></i> Описание (необязательно):</label>
+                        <textarea id="deal-description" rows="3" placeholder="Опишите что вы продаёте/покупаете..."
+                            style="font-size: 0.9rem;"></textarea>
+                    </div>
+
+                    <div style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 12px; margin: 20px 0;">
+                        <h4 style="color: var(--secondary); margin-bottom: 12px; font-size: 0.95rem;">СВОДКА СДЕЛКИ:
+                        </h4>
+                        <div style="line-height: 1.8; font-size: 0.9rem;">
+                            <div style="display: flex; justify-content: space-between;">
+                                <span>Тип сделки:</span>
+                                <span id="deal-summary-type"
+                                    style="color: var(--accent); font-weight: bold;">Продажа</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <span>Актив:</span>
+                                <span id="deal-summary-asset">DogeMoon токены</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <span>Количество:</span>
+                                <span id="deal-summary-quantity">1 шт.</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <span>Цена за <span id="summary-price-unit">1 шт.</span>:</span>
+                                <span id="deal-summary-price">1 SKY</span>
+                            </div>
+                            <div style="display: flex; justify-content: space-between;">
+                                <span>Общая стоимость:</span>
+                                <span id="deal-summary-total" style="color: var(--success); font-weight: bold;">1
+                                    SKY</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <button class="btn btn-success btn-block" id="btn-create-deal" style="font-size: 0.9rem;">
+                        <i class="fas fa-check-circle"></i> СОЗДАТЬ СДЕЛКУ
+                    </button>
+                </div>
+
+                <!-- Найти сделку -->
+                <div class="card">
+                    <div class="card-title">
+                        <h3 style="font-size: 1.1rem;"><i class="fas fa-search"></i> НАЙТИ СДЕЛКУ</h3>
+                    </div>
+
+                    <div class="form-group">
+                        <label><i class="fas fa-filter"></i> Фильтр по типу:</label>
+                        <select id="filter-type" style="font-size: 0.9rem;">
+                            <option value="all">Все сделки</option>
+                            <option value="sell">Только продажи</option>
+                            <option value="buy">Только покупки</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label><i class="fas fa-tag"></i> Фильтр по активу:</label>
+                        <select id="filter-asset" style="font-size: 0.9rem;">
+                            <option value="all">Все активы</option>
+                            <option value="dogemoon">DogeMoon токены</option>
+                            <option value="pepe">PepeCoin токены</option>
+                            <option value="shiba">ShibaInuBSC токены</option>
+                            <option value="bonk">BonkSolana токены</option>
+                            <option value="floki">FlokiMarvin токены</option>
+                            <option value="millennium-share">Доли в Башне Тысячелетия</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label><i class="fas fa-dollar-sign"></i> Максимальная цена (SKY):</label>
+                        <input type="number" id="filter-max-price" placeholder="Любая цена" min="0"
+                            style="font-size: 0.9rem;">
+                    </div>
+
+                    <button class="btn btn-primary btn-block" id="btn-search-deals"
+                        style="margin-bottom: 15px; font-size: 0.9rem;">
+                        <i class="fas fa-search"></i> НАЙТИ СДЕЛКИ
+                    </button>
+
+                    <div style="margin-top: 15px;">
+                        <h4 style="color: var(--secondary); margin-bottom: 12px; font-size: 0.95rem;">НАЙДЕННЫЕ СДЕЛКИ:
+                        </h4>
+                        <div id="deals-list" style="max-height: 300px; overflow-y: auto;">
+                            <!-- Сделки загружаются через JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Withdraw Section -->
+        <div id="withdraw-section" class="content-section">
+            <div class="withdraw-grid">
+                <div>
+                    <div class="card">
+                        <div class="card-title">
+                            <h3 style="font-size: 1.1rem;"><i class="fas fa-money-bill-wave"></i> ВЫВОД СРЕДСТВ</h3>
+                        </div>
+
+                        <div class="form-group">
+                            <label><i class="fas fa-wallet"></i> Способ вывода:</label>
+                            <select id="withdraw-method" style="font-size: 0.9rem;">
+                                <option value="crypto">Криптовалюта (USDT, BTC, ETH)</option>
+                                <option value="bank">Банковская карта</option>
+                                <option value="yoomoney">ЮMoney</option>
+                                <option value="qiwi">QIWI</option>
+                            </select>
+                        </div>
+
+                        <div class="form-group">
+                            <label><i class="fas fa-coins"></i> Сумма к выводу (SKY):</label>
+                            <input type="number" id="withdraw-amount" placeholder="Введите сумму" min="100"
+                                style="font-size: 0.9rem;">
+                        </div>
+
+                        <!-- Crypto Details -->
+                        <div id="crypto-details">
+                            <div class="form-group">
+                                <label><i class="fas fa-wallet"></i> Крипто-кошелёк:</label>
+                                <input type="text" id="crypto-wallet" placeholder="Введите адрес кошелька"
+                                    style="font-size: 0.9rem;">
+                            </div>
+                            <div class="form-group">
+                                <label><i class="fas fa-network-wired"></i> Сеть:</label>
+                                <select id="crypto-network" style="font-size: 0.9rem;">
+                                    <option value="trc20">TRC-20 (USDT) - Комиссия 1%</option>
+                                    <option value="erc20">ERC-20 (ETH) - Комиссия 3%</option>
+                                    <option value="bep20">BEP-20 (BNB) - Комиссия 0.5%</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Card Details -->
+                        <div id="card-details" style="display: none;">
+                            <div class="form-group">
+                                <label><i class="fas fa-credit-card"></i> Номер карты:</label>
+                                <input type="text" id="card-number" placeholder="0000 0000 0000 0000"
+                                    style="font-size: 0.9rem;">
+                            </div>
+                            <div id="withdraw-name-group" class="form-group">
+                                <label><i class="fas fa-user"></i> ФИО получателя:</label>
+                                <input type="text" id="withdraw-name" placeholder="Иванов Иван Иванович"
+                                    style="font-size: 0.9rem;">
+                            </div>
+                        </div>
+
+                        <!-- Summary with USD equivalent -->
+                        <div style="background: rgba(0,0,0,0.3); padding: 15px; border-radius: 12px; margin: 20px 0;">
+                            <h4 style="color: var(--secondary); margin-bottom: 12px; font-size: 0.95rem;">СВОДКА:</h4>
+                            <div>
+                                <div class="withdraw-summary-item">
+                                    <span>Сумма вывода:</span>
+                                    <span>
+                                        <span id="withdraw-summary-amount">0</span> SKY
+                                        <span style="color: var(--gray); margin-left: 5px;">≈ $<span
+                                                id="withdraw-usd">0.00</span></span>
+                                    </span>
+                                </div>
+                                <div class="withdraw-summary-item">
+                                    <span>Комиссия платформы (1%):</span>
+                                    <span id="withdraw-fee-platform">0 SKY</span>
+                                </div>
+                                <div class="withdraw-summary-item">
+                                    <span>Комиссия сети:</span>
+                                    <span id="withdraw-fee-network">0 SKY</span>
+                                </div>
+                                <div class="withdraw-summary-item"
+                                    style="font-weight: bold; font-size: 0.95rem; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.1);">
+                                    <span>К получению:</span>
+                                    <span>
+                                        <span id="withdraw-total" style="color: var(--success);">0</span> SKY
+                                        <span style="color: var(--success); margin-left: 5px;">≈ $<span
+                                                id="withdraw-total-usd">0.00</span></span>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button class="btn btn-success btn-block" id="btn-withdraw" style="font-size: 0.9rem;">
+                            <i class="fas fa-paper-plane"></i> ВЫВЕСТИ СРЕДСТВА
+                        </button>
+                    </div>
+                </div>
+
+                <!-- History -->
+                <div>
+                    <div class="card">
+                        <div class="card-title">
+                            <h3 style="font-size: 1.1rem;"><i class="fas fa-history"></i> ИСТОРИЯ ВЫВОДОВ</h3>
+                        </div>
+                        <div id="withdraw-history" style="max-height: 300px; overflow-y: auto;">
+                            <!-- История добавляется через JS -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Кнопка помощи -->
+    <div class="help-btn" onclick="showHelp()">
+        <i class="fas fa-question-circle"></i>
+    </div>
+
+    <!-- Bottom Navigation -->
+    <div class="bottom-nav">
+        <a href="#" class="bottom-nav-item active" data-section="home">
+            <i class="fas fa-home"></i>
+            <span>Главная</span>
+        </a>
+        <a href="#" class="bottom-nav-item" data-section="projects">
+            <i class="fas fa-building"></i>
+            <span>Проекты</span>
+        </a>
+        <a href="#" class="bottom-nav-item" data-section="exchange">
+            <i class="fas fa-exchange-alt"></i>
+            <span>Биржа</span>
+        </a>
+        <a href="#" class="bottom-nav-item" data-section="casino">
+            <i class="fas fa-dice"></i>
+            <span>Казино</span>
+        </a>
+        <a href="#" class="bottom-nav-item" data-section="earn">
+            <i class="fas fa-ad"></i>
+            <span>Реклама</span>
+        </a>
+        <a href="#" class="bottom-nav-item" data-section="market">
+            <i class="fas fa-store"></i>
+            <span>Рынок</span>
+        </a>
+        <a href="#" class="bottom-nav-item" data-section="withdraw">
+            <i class="fas fa-money-bill-wave"></i>
+            <span>Вывод</span>
+        </a>
+    </div>
+
+    <!-- Deposit Modal -->
+    <div class="modal" id="deposit-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 style="color: var(--secondary); font-size: 1.1rem;"><i class="fas fa-coins"></i> ПОПОЛНЕНИЕ БАЛАНСА
+                </h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div style="text-align: center; padding: 15px 0;">
+                <div style="font-size: 0.95rem; color: var(--gray); margin-bottom: 15px;">
+                    Курс: <span style="color: var(--success); font-weight: bold;">$1.25 = 1000 SKY</span>
+                </div>
+                <div class="form-group">
+                    <label>Сумма в долларах ($):</label>
+                    <input type="number" id="deposit-usd" placeholder="Введите сумму" min="1.25" step="0.01"
+                        style="font-size: 0.9rem;">
+                </div>
+                <div style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 12px; margin: 15px 0;">
+                    <div style="display: flex; justify-content: space-between; font-size: 0.95rem;">
+                        <span>Вы получите:</span>
+                        <span id="deposit-receive" style="color: var(--success); font-weight: bold; font-size: 1rem;">0
+                            SKY</span>
+                    </div>
+                </div>
+                <button class="btn btn-success btn-block" id="btn-process-deposit" style="font-size: 0.9rem;">
+                    <i class="fas fa-lock"></i> ОПЛАТИТЬ
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Modal -->
+    <div class="modal" id="notification-modal">
+        <div class="modal-content notification-modal">
+            <div class="modal-header">
+                <h3 style="color: var(--secondary); font-size: 1.1rem;"><i class="fas fa-bell"></i> УВЕДОМЛЕНИЯ</h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div id="notifications-list">
+                <!-- Уведомления добавляются через JS -->
+            </div>
+            <div style="padding: 12px; text-align: center;">
+                <button class="btn btn-danger btn-small" id="btn-clear-all-notifications" style="font-size: 0.8rem;">
+                    <i class="fas fa-trash"></i> ОЧИСТИТЬ ВСЕ
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==================== МОДАЛЬНОЕ ОКНО ДЛЯ СООБЩЕНИЙ АДМИНА ==================== -->
+    <div class="modal" id="admin-message-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 style="color: var(--secondary); font-size: 1.1rem;"><i class="fas fa-bullhorn"></i> СООБЩЕНИЕ ДЛЯ
+                    ВСЕХ ПОЛЬЗОВАТЕЛЕЙ</h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div style="padding: 15px 0;">
+                <div class="form-group">
+                    <label>Заголовок сообщения:</label>
+                    <input type="text" id="admin-message-title" placeholder="Важное обновление"
+                        value="Важное обновление" style="font-size: 0.9rem;">
+                </div>
+                <div class="form-group">
+                    <label>Текст сообщения:</label>
+                    <textarea id="admin-message-content" rows="4"
+                        placeholder="Введите текст сообщения для всех пользователей..."
+                        style="font-size: 0.9rem;">📢 Важное обновление: Запуск нового функционала планируется на следующей неделе!</textarea>
+                </div>
+                <div class="form-group">
+                    <label>Цвет сообщения:</label>
+                    <select id="admin-message-color" style="font-size: 0.9rem;">
+                        <option value="accent">Красный (важное)</option>
+                        <option value="warning">Жёлтый (предупреждение)</option>
+                        <option value="success">Зелёный (успех)</option>
+                        <option value="secondary">Синий (информация)</option>
+                    </select>
+                </div>
+                <div style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 10px; margin: 15px 0;">
+                    <h4 style="color: var(--secondary); margin-bottom: 8px; font-size: 0.95rem;">Предпросмотр:</h4>
+                    <div id="admin-message-preview"
+                        style="background: linear-gradient(45deg, var(--accent), var(--warning)); border-radius: 8px; padding: 12px; color: white; font-size: 0.9rem; line-height: 1.3;">
+                        <strong>Важное обновление:</strong> Запуск нового функционала планируется на следующей неделе!
+                    </div>
+                </div>
+                <button class="btn btn-success btn-block" id="btn-send-message" style="font-size: 0.9rem;">
+                    <i class="fas fa-paper-plane"></i> ОТПРАВИТЬ ВСЕМ ПОЛЬЗОВАТЕЛЯМ
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно деталей проекта -->
+    <div class="modal" id="project-detail-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 style="color: var(--secondary); font-size: 1.1rem;" id="project-detail-title">
+                    <i class="fas fa-building"></i> ДЕТАЛИ ПРОЕКТА
+                </h3>
+                <button class="close-modal">&times;</button>
+            </div>
+            <div id="project-detail-content" style="padding: 15px 0;">
+                <!-- Детали проекта загружаются через JS -->
+            </div>
+            <div style="text-align: center; margin-top: 15px;">
+                <button class="btn btn-primary"
+                    onclick="document.getElementById('project-detail-modal').style.display='none'"
+                    style="font-size: 0.9rem;">
+                    <i class="fas fa-arrow-left"></i> НАЗАД К СПИСКУ ПРОЕКТОВ
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Модальное окно игры Колесо везения -->
+    <div class="modal" id="wheel-game-modal">
+        <div class="modal-content" style="max-width: 95%;">
+            <div class="modal-header">
+                <h3 style="color: var(--warning); font-size: 1.1rem;"><i class="fas fa-wheel"></i> КОЛЕСО ВЕЗЕНИЯ</h3>
+                <button class="close-modal" onclick="closeWheelGame()">&times;</button>
+            </div>
+            <div style="padding: 15px;">
+                <div style="text-align: center; margin-bottom: 15px;">
+                    <div class="wheel-timer" id="wheel-timer-modal">60</div>
+                    <div style="color: var(--gray); font-size: 0.85rem;">секунд до начала раунда</div>
+                </div>
+
+                <div style="background: rgba(0,0,0,0.5); padding: 15px; border-radius: 12px; margin-bottom: 15px;">
+                    <div class="wheel-prize" id="wheel-prize-modal" style="font-size: 1.1rem;">Призовой фонд: 0 SKY
+                    </div>
+                    <div style="color: var(--gray); text-align: center; font-size: 0.85rem;">
+                        Каждый игрок занимает процент колеса. Победитель получает 95% от всех ставок.
+                    </div>
+                </div>
+
+                <!-- Колесо с анимацией -->
+                <div class="wheel-container">
+                    <canvas id="wheel-canvas" class="wheel-canvas"></canvas>
+                </div>
+
+                <div class="form-group">
+                    <label>Ваша ставка (SKY):</label>
+                    <input type="number" id="wheel-bet-modal" placeholder="Минимум 10 SKY" value="100" min="10"
+                        style="font-size: 0.9rem;">
+                </div>
+
+                <button class="btn btn-warning btn-block" onclick="joinWheelGameModal()" style="font-size: 0.9rem;">
+                    <i class="fas fa-play"></i> СДЕЛАТЬ СТАВКУ
+                </button>
+
+                <div class="wheel-players" id="wheel-players-modal">
+                    <!-- Игроки будут добавляться здесь -->
+                </div>
+
+                <div class="casino-game-stats">
+                    <div style="text-align: center;">
+                        <div style="color: var(--success); font-size: 1.3rem; font-weight: bold;"
+                            id="wheel-players-count-modal">0</div>
+                        <div style="color: var(--gray); font-size: 0.85rem;">Игроков в раунде</div>
+                    </div>
+                    <div style="text-align: center;">
+                        <div style="color: var(--accent); font-size: 1.3rem; font-weight: bold;"
+                            id="wheel-total-bet-modal">0</div>
+                        <div style="color: var(--gray); font-size: 0.85rem;">Общая сумма ставок</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script>
+        // Инициализация Firebase
+        document.addEventListener('DOMContentLoaded', function () {
+            // Проверяем, что Firebase доступен
+            if (typeof firebase !== 'undefined' && window.firebaseConfig) {
+                try {
+                    // Инициализируем Firebase
+                    firebase.initializeApp(window.firebaseConfig);
+
+                    console.log('Firebase успешно инициализирован!');
+
+                    // Теперь можно использовать Firebase
+                    const db = firebase.firestore();
+                    const auth = firebase.auth();
+
+                    // Запускаем вашу платформу
+                    initPlatform();
+
+                } catch (error) {
+                    console.error('Ошибка инициализации Firebase:', error);
+                    // Запускаем платформу в оффлайн режиме
+                    initPlatformOffline();
+                }
+            } else {
+                console.log('Firebase не загружен. Запускаем оффлайн режим.');
+                initPlatformOffline();
+            }
+        });
+
+        function initPlatform() {
+            // Тот же код, что у вас был, но теперь с Firebase
+            // Я предоставлю исправленный код ниже
+        }
+
+        function initPlatformOffline() {
+            // Оффлайн версия без Firebase
+            console.log('Запуск в оффлайн режиме');
+            // Инициализация без сервера
+        }
+    </script>
+
+</body>
+
+</html>
