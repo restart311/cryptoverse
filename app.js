@@ -1,13 +1,12 @@
 // === КОНФИГУРАЦИЯ FIREBASE ===
-const firebaseConfig = {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_PROJECT.firebaseapp.com",
-    databaseURL: "https://YOUR_PROJECT.firebaseio.com",
-    projectId: "YOUR_PROJECT",
-    storageBucket: "YOUR_PROJECT.appspot.com",
-    messagingSenderId: "YOUR_SENDER_ID",
-    appId: "YOUR_APP_ID"
-};
+// Используем уже инициализированный Firebase или null
+let firebaseInitialized = false;
+
+// Проверяем, инициализирован ли Firebase
+if (typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length > 0) {
+    firebaseInitialized = true;
+    console.log('Firebase уже инициализирован');
+}
 
 // Инициализация Firebase
 let db;
@@ -31,7 +30,7 @@ const platform = {
     orders: [],
     notifications: [],
     casinoGames: {},
-    
+
     // Временные данные для анимаций
     tempData: {
         isOnline: false,
@@ -43,19 +42,26 @@ const platform = {
 // === ИНИЦИАЛИЗАЦИЯ ПЛАТФОРМЫ ===
 async function initPlatform() {
     try {
+        console.log("Начало инициализации платформы...");
+
         // Проверяем, находится ли пользователь в Telegram
         if (window.Telegram && Telegram.WebApp) {
+            console.log("Telegram WebApp обнаружен");
             initTelegramWebApp();
         }
-        
-        // Инициализируем Firebase
-        if (!firebase.apps.length) {
-            firebase.initializeApp(firebaseConfig);
+
+        // Проверяем, что Firebase доступен и инициализирован
+        if (!firebaseInitialized) {
+            console.warn("Firebase не инициализирован, используем оффлайн-режим");
+            return initPlatformOffline();
         }
-        
+
+        console.log("Инициализация Firebase сервисов...");
+
+        // Получаем ссылки на Firebase сервисы
         db = firebase.firestore();
         auth = firebase.auth();
-        
+
         // Создаем ссылки на коллекции
         usersRef = db.collection("users");
         dealsRef = db.collection("deals");
@@ -64,26 +70,95 @@ async function initPlatform() {
         projectsRef = db.collection("projects");
         notificationsRef = db.collection("notifications");
         cryptoRef = db.collection("crypto");
-        
+
+        console.log("Firebase сервисы готовы");
+
         // Авторизация через Telegram или анонимно
         await initAuth();
-        
+
         // Загружаем начальные данные
         await loadInitialData();
-        
+
         // Настраиваем реальные обновления
         setupRealtimeUpdates();
-        
+
         // Инициализируем интерфейс
         initUI();
-        
-        // Запускаем анимации загрузки
-        showLoadingAnimation();
-        
+
+        // Скрываем загрузку
+        hideLoading();
+
+        console.log("Платформа успешно инициализирована");
+
     } catch (error) {
-        console.error("Ошибка инициализации:", error);
-        showError("Ошибка подключения. Пожалуйста, обновите страницу.");
+        console.error("Критическая ошибка инициализации:", error);
+        hideLoading();
+        showError("Ошибка загрузки. Переход в оффлайн-режим");
+
+        // Запускаем оффлайн режим
+        setTimeout(() => {
+            initPlatformOffline();
+        }, 1000);
     }
+}
+try {
+    console.log("Начало инициализации платформы...");
+
+    // Проверяем, находится ли пользователь в Telegram
+    if (window.Telegram && Telegram.WebApp) {
+        console.log("Telegram WebApp обнаружен");
+        initTelegramWebApp();
+    }
+
+    // Проверяем, что Firebase доступен и инициализирован
+    if (!firebaseInitialized) {
+        console.warn("Firebase не инициализирован, используем оффлайн-режим");
+        return initPlatformOffline();
+    }
+
+    console.log("Инициализация Firebase сервисов...");
+
+    // Получаем ссылки на Firebase сервисы
+    db = firebase.firestore();
+    auth = firebase.auth();
+
+    // Создаем ссылки на коллекции
+    usersRef = db.collection("users");
+    dealsRef = db.collection("deals");
+    ordersRef = db.collection("orders");
+    gamesRef = db.collection("games");
+    projectsRef = db.collection("projects");
+    notificationsRef = db.collection("notifications");
+    cryptoRef = db.collection("crypto");
+
+    console.log("Firebase сервисы готовы");
+
+    // Авторизация через Telegram или анонимно
+    await initAuth();
+
+    // Загружаем начальные данные
+    await loadInitialData();
+
+    // Настраиваем реальные обновления
+    setupRealtimeUpdates();
+
+    // Инициализируем интерфейс
+    initUI();
+
+    // Скрываем загрузку
+    hideLoading();
+
+    console.log("Платформа успешно инициализирована");
+
+} catch (error) {
+    console.error("Критическая ошибка инициализации:", error);
+    hideLoading();
+    showError("Ошибка загрузки. Переход в оффлайн-режим");
+
+    // Запускаем оффлайн режим
+    setTimeout(() => {
+        initPlatformOffline();
+    }, 1000);
 }
 
 // === АВТОРИЗАЦИЯ ===
@@ -92,12 +167,12 @@ async function initAuth() {
     if (window.Telegram && Telegram.WebApp.initDataUnsafe?.user) {
         const tgUser = Telegram.WebApp.initDataUnsafe.user;
         const userId = `tg_${tgUser.id}`;
-        
+
         // Создаем кастомный токен через ваш сервер
         // Для теста используем анонимную авторизацию
         const credential = await auth.signInAnonymously();
         currentUser = credential.user;
-        
+
         // Сохраняем/обновляем данные пользователя
         await usersRef.doc(userId).set({
             id: userId,
@@ -111,14 +186,14 @@ async function initAuth() {
             lastSeen: firebase.firestore.FieldValue.serverTimestamp(),
             online: true
         }, { merge: true });
-        
+
         currentUser.uid = userId;
-        
+
     } else {
         // Анонимная авторизация
         const credential = await auth.signInAnonymously();
         currentUser = credential.user;
-        
+
         await usersRef.doc(currentUser.uid).set({
             id: currentUser.uid,
             username: `user_${Date.now()}`,
@@ -128,10 +203,10 @@ async function initAuth() {
             online: true
         }, { merge: true });
     }
-    
+
     // Обновляем статус онлайн
     setUserOnline(true);
-    
+
     // Отслеживаем статус подключения
     firebase.database().ref('.info/connected').on('value', (snapshot) => {
         platform.tempData.isOnline = snapshot.val() === true;
@@ -142,48 +217,48 @@ async function initAuth() {
 // === ЗАГРУЗКА ДАННЫХ ===
 async function loadInitialData() {
     showLoading("Загрузка данных...");
-    
+
     // 1. Загружаем данные пользователя
     const userDoc = await usersRef.doc(currentUser.uid).get();
     platform.userData = userDoc.data() || {};
     platform.balance = platform.userData.balance || 0;
-    
+
     // 2. Загружаем проекты
     const projectsSnapshot = await projectsRef.get();
     projectsSnapshot.forEach(doc => {
         platform.projects[doc.id] = doc.data();
     });
-    
+
     // 3. Загружаем сделки (только активные)
     const dealsSnapshot = await dealsRef.where('status', '==', 'active').get();
     platform.deals = [];
     dealsSnapshot.forEach(doc => {
         platform.deals.push({ id: doc.id, ...doc.data() });
     });
-    
+
     // 4. Загружаем ордеры
     const ordersSnapshot = await ordersRef.orderBy('timestamp', 'desc').limit(50).get();
     platform.orders = [];
     ordersSnapshot.forEach(doc => {
         platform.orders.push({ id: doc.id, ...doc.data() });
     });
-    
+
     // 5. Загружаем крипто-цены
     const cryptoSnapshot = await cryptoRef.doc('prices').get();
     platform.cryptoPrices = cryptoSnapshot.data() || {};
-    
+
     // 6. Загружаем уведомления пользователя
     const notificationsSnapshot = await notificationsRef
         .where('userId', '==', currentUser.uid)
         .orderBy('timestamp', 'desc')
         .limit(20)
         .get();
-    
+
     platform.notifications = [];
     notificationsSnapshot.forEach(doc => {
         platform.notifications.push({ id: doc.id, ...doc.data() });
     });
-    
+
     hideLoading();
 }
 
@@ -197,7 +272,7 @@ function setupRealtimeUpdates() {
             updateBalanceDisplay();
         }
     });
-    
+
     // 2. Слушаем новые сделки в реальном времени
     dealsRef.where('status', '==', 'active')
         .onSnapshot((snapshot) => {
@@ -208,7 +283,7 @@ function setupRealtimeUpdates() {
             updateDealsList();
             showNotification("Обновлены сделки на рынке");
         });
-    
+
     // 3. Слушаем новые ордеры
     ordersRef.orderBy('timestamp', 'desc').limit(50)
         .onSnapshot((snapshot) => {
@@ -218,18 +293,18 @@ function setupRealtimeUpdates() {
             });
             updateOrderBook();
         });
-    
+
     // 4. Слушаем изменения крипто-цен
     cryptoRef.doc('prices').onSnapshot((doc) => {
         if (doc.exists) {
             platform.cryptoPrices = doc.data();
             updateCryptoPricesDisplay();
-            
+
             // Анимация изменения цены
             animatePriceChange();
         }
     });
-    
+
     // 5. Слушаем новые уведомления
     notificationsRef
         .where('userId', '==', currentUser.uid)
@@ -241,12 +316,12 @@ function setupRealtimeUpdates() {
                 platform.notifications.push({ id: doc.id, ...doc.data() });
             });
             updateNotifications();
-            
+
             // Показываем badge для новых уведомлений
             const unread = platform.notifications.filter(n => !n.read).length;
             updateNotificationBadge(unread);
         });
-    
+
     // 6. Слушаем онлайн-пользователей
     usersRef.where('online', '==', true)
         .onSnapshot((snapshot) => {
@@ -259,19 +334,19 @@ function setupRealtimeUpdates() {
 // 1. ПОПОЛНЕНИЕ БАЛАНСА ЧЕРЕЗ TELEGRAM
 async function processDeposit(amountUSD) {
     showLoading("Обработка платежа...");
-    
+
     try {
         // В реальном проекте здесь будет интеграция с платежной системой
         // Для демо - просто добавляем баланс
-        
+
         const skyAmount = Math.floor(amountUSD * 800);
-        
+
         // Обновляем баланс в Firebase
         await usersRef.doc(currentUser.uid).update({
             balance: firebase.firestore.FieldValue.increment(skyAmount),
             totalDeposited: firebase.firestore.FieldValue.increment(amountUSD)
         });
-        
+
         // Создаем транзакцию
         await db.collection('transactions').add({
             userId: currentUser.uid,
@@ -282,7 +357,7 @@ async function processDeposit(amountUSD) {
             timestamp: firebase.firestore.FieldValue.serverTimestamp(),
             method: 'telegram'
         });
-        
+
         // Отправляем уведомление
         await createNotification(
             currentUser.uid,
@@ -290,10 +365,10 @@ async function processDeposit(amountUSD) {
             `Ваш баланс пополнен на ${skyAmount.toLocaleString()} SKY ($${amountUSD})`,
             'success'
         );
-        
+
         hideLoading();
         showSuccess(`Баланс пополнен на ${skyAmount.toLocaleString()} SKY!`);
-        
+
     } catch (error) {
         hideLoading();
         showError("Ошибка при пополнении баланса");
@@ -304,23 +379,23 @@ async function processDeposit(amountUSD) {
 // 2. ВЫВОД СРЕДСТВ
 async function processWithdraw(amountSKY, method, details) {
     showLoading("Обработка вывода...");
-    
+
     try {
         // Проверяем минимальную сумму
         if (amountSKY < 100) {
             throw new Error("Минимальная сумма вывода - 100 SKY");
         }
-        
+
         // Проверяем баланс
         if (amountSKY > platform.balance) {
             throw new Error("Недостаточно средств");
         }
-        
+
         // Рассчитываем комиссии
         const feePlatform = amountSKY * 0.01;
         const feeNetwork = calculateNetworkFee(method, amountSKY);
         const total = amountSKY - feePlatform - feeNetwork;
-        
+
         // Создаем заявку на вывод
         const withdrawRequest = {
             userId: currentUser.uid,
@@ -333,14 +408,14 @@ async function processWithdraw(amountSKY, method, details) {
             status: 'pending',
             timestamp: firebase.firestore.FieldValue.serverTimestamp()
         };
-        
+
         await db.collection('withdrawals').add(withdrawRequest);
-        
+
         // Резервируем средства (в реальном проекте нужно отдельное поле для зарезервированных средств)
         await usersRef.doc(currentUser.uid).update({
             balance: firebase.firestore.FieldValue.increment(-amountSKY)
         });
-        
+
         // Отправляем уведомление
         await createNotification(
             currentUser.uid,
@@ -348,10 +423,10 @@ async function processWithdraw(amountSKY, method, details) {
             `Создана заявка на вывод ${amountSKY.toLocaleString()} SKY`,
             'info'
         );
-        
+
         hideLoading();
         showSuccess(`Заявка на вывод создана! Вы получите ${total.toLocaleString()} SKY`);
-        
+
     } catch (error) {
         hideLoading();
         showError(error.message);
@@ -361,7 +436,7 @@ async function processWithdraw(amountSKY, method, details) {
 // 3. СОЗДАНИЕ СДЕЛКИ НА РЫНКЕ
 async function createDeal(dealData) {
     showLoading("Создание сделки...");
-    
+
     try {
         // Проверяем наличие средств/активов
         if (dealData.type === 'sell') {
@@ -385,7 +460,7 @@ async function createDeal(dealData) {
                 throw new Error("Недостаточно SKY для покупки");
             }
         }
-        
+
         // Создаем сделку
         const deal = {
             ...dealData,
@@ -395,17 +470,17 @@ async function createDeal(dealData) {
             timestamp: firebase.firestore.FieldValue.serverTimestamp(),
             expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 дней
         };
-        
+
         await dealsRef.add(deal);
-        
+
         // Если продажа - резервируем активы
         if (dealData.type === 'sell') {
             await reserveAssetsForDeal(dealData);
         }
-        
+
         hideLoading();
         showSuccess("Сделка создана!");
-        
+
     } catch (error) {
         hideLoading();
         showError(error.message);
@@ -415,7 +490,7 @@ async function createDeal(dealData) {
 // 4. ТОРГОВЛЯ НА БИРЖЕ (С ИЗМЕНЕНИЕМ ЦЕН)
 async function executeTrade(type, coin, amount, price) {
     showLoading("Выполнение сделки...");
-    
+
     try {
         // Создаем ордер
         const order = {
@@ -429,10 +504,10 @@ async function executeTrade(type, coin, amount, price) {
             timestamp: firebase.firestore.FieldValue.serverTimestamp(),
             status: 'executed'
         };
-        
+
         // Сохраняем ордер
         await ordersRef.add(order);
-        
+
         // Обновляем баланс/активы пользователя
         if (type === 'buy') {
             // Покупаем крипто
@@ -443,13 +518,13 @@ async function executeTrade(type, coin, amount, price) {
             await updateUserBalance(order.total);
             await updateUserCryptoHoldings(coin, -amount);
         }
-        
+
         // Обновляем цену на основе спроса/предложения
         await updateCryptoPrice(coin, type, amount);
-        
+
         hideLoading();
         showSuccess(`Сделка выполнена! ${type === 'buy' ? 'Куплено' : 'Продано'} ${amount} ${coin}`);
-        
+
     } catch (error) {
         hideLoading();
         showError("Ошибка при выполнении сделки");
@@ -459,20 +534,20 @@ async function executeTrade(type, coin, amount, price) {
 // 5. ИГРЫ С БОТАМИ
 async function joinWheelGame(betAmount) {
     showLoading("Подключение к игре...");
-    
+
     try {
         // Проверяем баланс
         if (betAmount > platform.balance) {
             throw new Error("Недостаточно средств");
         }
-        
+
         // Находим активную игру или создаем новую
         let game = await findActiveWheelGame();
-        
+
         if (!game) {
             // Создаем новую игру
             game = await createNewWheelGame();
-            
+
             // Добавляем ботов, если мало игроков
             setTimeout(async () => {
                 const players = await getGamePlayers(game.id);
@@ -481,7 +556,7 @@ async function joinWheelGame(betAmount) {
                 }
             }, 3000);
         }
-        
+
         // Добавляем игрока в игру
         await addPlayerToGame(game.id, {
             userId: currentUser.uid,
@@ -489,13 +564,13 @@ async function joinWheelGame(betAmount) {
             bet: betAmount,
             isBot: false
         });
-        
+
         // Списываем ставку
         await updateUserBalance(-betAmount);
-        
+
         hideLoading();
         showSuccess(`Вы присоединились к игре! Ставка: ${betAmount} SKY`);
-        
+
     } catch (error) {
         hideLoading();
         showError(error.message);
@@ -505,11 +580,11 @@ async function joinWheelGame(betAmount) {
 // 6. СИСТЕМА БОТОВ ДЛЯ ИГР
 async function addBotsToGame(gameId, humanBet) {
     const botCount = Math.floor(Math.random() * 2) + 1; // 1-2 бота
-    
+
     for (let i = 0; i < botCount; i++) {
         const botBet = Math.floor(humanBet * (0.5 + Math.random() * 1.5)); // 50-150% от ставки человека
         const botName = `Бот_${Math.floor(Math.random() * 1000)}`;
-        
+
         await addPlayerToGame(gameId, {
             userId: `bot_${Date.now()}_${i}`,
             userName: botName,
@@ -534,7 +609,7 @@ function showLoading(message = "Загрузка...") {
         </div>
     `;
     document.body.appendChild(loadingEl);
-    
+
     // Добавляем стили
     const style = document.createElement('style');
     style.textContent = `
@@ -587,7 +662,7 @@ function animatePriceChange() {
     priceElements.forEach(el => {
         el.style.transform = 'scale(1.1)';
         el.style.color = 'var(--accent)';
-        
+
         setTimeout(() => {
             el.style.transform = 'scale(1)';
             el.style.color = '';
@@ -605,9 +680,9 @@ function showNotification(message, type = 'info') {
             ${message}
         </div>
     `;
-    
+
     document.body.appendChild(notification);
-    
+
     // Добавляем стили
     if (!document.querySelector('#notification-styles')) {
         const style = document.createElement('style');
@@ -646,7 +721,7 @@ function showNotification(message, type = 'info') {
         `;
         document.head.appendChild(style);
     }
-    
+
     // Автоудаление через 5 секунд
     setTimeout(() => {
         notification.style.animation = 'slideOut 0.3s ease';
@@ -683,22 +758,22 @@ async function updateCryptoPrice(coin, tradeType, amount) {
     const priceRef = cryptoRef.doc('prices');
     const priceDoc = await priceRef.get();
     const prices = priceDoc.data();
-    
+
     let currentPrice = prices[coin] || 100;
-    
+
     // Изменяем цену на основе торгов
     const changeFactor = (tradeType === 'buy' ? 1.001 : 0.999);
     const volumeFactor = Math.log10(amount + 1) * 0.01;
-    
+
     currentPrice *= changeFactor * (1 + volumeFactor);
-    
+
     // Добавляем случайные колебания
     const randomChange = 0.998 + Math.random() * 0.004;
     currentPrice *= randomChange;
-    
+
     // Ограничиваем минимальную цену
     currentPrice = Math.max(currentPrice, 0.000001);
-    
+
     // Обновляем в базе
     await priceRef.update({
         [coin]: currentPrice,
@@ -709,27 +784,129 @@ async function updateCryptoPrice(coin, tradeType, amount) {
 // === TELEGRAM WEB APP ИНТЕГРАЦИЯ ===
 function initTelegramWebApp() {
     const tg = window.Telegram.WebApp;
-    
+
     // Расширяем приложение на весь экран
     tg.expand();
-    
+
     // Скрываем кнопку "Назад"
     tg.BackButton.hide();
-    
+
     // Настраиваем тему
     const theme = tg.colorScheme;
     if (theme === 'dark') {
         document.documentElement.setAttribute('data-theme', 'dark');
     }
-    
+
     // Обработка платежей
     tg.MainButton.setText("Пополнить баланс");
     tg.MainButton.onClick(() => {
         openDepositModal();
     });
-    
+
     // Готовность приложения
     tg.ready();
+}
+
+// === ИНИЦИАЛИЗАЦИЯ ИНТЕРФЕЙСА ===
+function initUI() {
+    console.log("Инициализация интерфейса...");
+    
+    // Обновляем баланс
+    updateBalanceDisplay();
+    
+    // Инициализируем навигацию
+    const navItems = document.querySelectorAll('.bottom-nav-item');
+    navItems.forEach(item => {
+        item.addEventListener('click', function(e) {
+            e.preventDefault();
+            const section = this.getAttribute('data-section');
+            showSection(section);
+            
+            // Обновляем активный класс
+            navItems.forEach(nav => nav.classList.remove('active'));
+            this.classList.add('active');
+        });
+    });
+    
+    // Инициализируем кнопки
+    const depositBtn = document.getElementById('btn-deposit');
+    if (depositBtn) {
+        depositBtn.addEventListener('click', function() {
+            document.getElementById('deposit-modal').style.display = 'flex';
+        });
+    }
+    
+    const notificationBtn = document.getElementById('notification-btn');
+    if (notificationBtn) {
+        notificationBtn.addEventListener('click', function() {
+            document.getElementById('notification-modal').style.display = 'flex';
+        });
+    }
+    
+    // Закрытие модальных окон
+    const closeButtons = document.querySelectorAll('.close-modal');
+    closeButtons.forEach(btn => {
+        btn.addEventListener('click', function() {
+            this.closest('.modal').style.display = 'none';
+        });
+    });
+    
+    // Обновляем статистику
+    updatePlatformStats();
+}
+
+// === ОБНОВЛЕНИЕ СТАТИСТИКИ ===
+function updatePlatformStats() {
+    // Здесь можно обновить статистику платформы
+    console.log("Обновление статистики...");
+}
+
+// === ОФФЛАЙН РЕЖИМ ===
+function initPlatformOffline() {
+    console.log("Запуск в оффлайн режиме");
+    hideLoading();
+    
+    // Загружаем демо-данные
+    platform.balance = 10000;
+    platform.userData = {
+        username: "Гость",
+        balance: 10000
+    };
+    
+    // Фиктивные данные для отображения
+    platform.cryptoPrices = {
+        dogemoon: 125,
+        pepe: 8.5,
+        shiba: 0.24,
+        bonk: 180,
+        floki: 1.2
+    };
+    
+    platform.deals = [
+        {
+            id: "demo1",
+            type: "sell",
+            asset: "dogemoon",
+            quantity: 100,
+            price: 130,
+            userName: "Демо-пользователь",
+            description: "Продажа DogeMoon токенов"
+        }
+    ];
+    
+    // Обновляем интерфейс
+    updateBalanceDisplay();
+    updateCryptoPricesDisplay();
+    
+    // Инициализируем UI
+    initUI();
+    
+    // Показываем уведомление
+    setTimeout(() => {
+        showNotification("Вы в оффлайн-режиме. Функции ограничены.", "warning");
+    }, 500);
+    
+    console.log("Оффлайн-режим активирован");
 }
 
 // === ИНИЦИАЛИЗАЦИЯ ПРИ ЗАГРУЗКЕ ===
@@ -737,19 +914,29 @@ document.addEventListener('DOMContentLoaded', function() {
     // Показываем загрузку
     showLoading("Инициализация платформы...");
     
-    // Запускаем платформу
+    // Даем время на загрузку всех скриптов
     setTimeout(() => {
-        initPlatform().then(() => {
-            console.log("Платформа инициализирована");
-        }).catch(error => {
-            console.error("Ошибка инициализации:", error);
-            showError("Не удалось загрузить приложение");
-        });
-    }, 1000);
+        initPlatform();
+    }, 1500);
 });
+
+// Простой тест - если через 5 секунд всё ещё загрузка, показываем ошибку
+setTimeout(() => {
+    const loadingEl = document.getElementById('global-loading');
+    if (loadingEl && loadingEl.style.display !== 'none') {
+        hideLoading();
+        showError("Не удалось загрузить приложение. Обновите страницу.");
+        initPlatformOffline();
+    }
+}, 5000);
 
 // Обработка закрытия страницы
 window.addEventListener('beforeunload', function() {
+    setUserOnline(false);
+});
+
+// Обработка закрытия страницы
+window.addEventListener('beforeunload', function () {
     setUserOnline(false);
 });
 
@@ -765,7 +952,7 @@ function showError(message) {
 function updateBalanceDisplay() {
     const balanceEl = document.getElementById('balance');
     const usdEl = document.getElementById('balance-usd');
-    
+
     if (balanceEl && usdEl) {
         balanceEl.textContent = platform.balance.toLocaleString('ru-RU') + ' SKY';
         usdEl.textContent = (platform.balance * 0.001).toFixed(2);
@@ -784,4 +971,50 @@ function updateOnlineUsersCount(count) {
     if (countEl) {
         countEl.textContent = count.toLocaleString('ru-RU');
     }
+}
+
+// === ОФФЛАЙН РЕЖИМ ===
+function initPlatformOffline() {
+    console.log("Запуск в оффлайн режиме");
+    hideLoading();
+
+    // Загружаем демо-данные
+    platform.balance = 10000;
+    platform.userData = {
+        username: "Гость",
+        balance: 10000
+    };
+
+    // Фиктивные данные для отображения
+    platform.cryptoPrices = {
+        dogemoon: 125,
+        pepe: 8.5,
+        shiba: 0.24,
+        bonk: 180,
+        floki: 1.2
+    };
+
+    platform.deals = [
+        {
+            id: "demo1",
+            type: "sell",
+            asset: "dogemoon",
+            quantity: 100,
+            price: 130,
+            userName: "Демо-пользователь",
+            description: "Продажа DogeMoon токенов"
+        }
+    ];
+
+    // Обновляем интерфейс
+    updateBalanceDisplay();
+    updateCryptoPricesDisplay();
+    updateDealsList();
+
+    // Показываем уведомление
+    setTimeout(() => {
+        showNotification("Вы в оффлайн-режиме. Функции ограничены.", "warning");
+    }, 500);
+
+    console.log("Оффлайн-режим активирован");
 }

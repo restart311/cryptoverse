@@ -8,13 +8,36 @@
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="style.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="app.js"></script>
+    <!-- Сначала Firebase -->
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
-    <!-- НОВОЕ: Подключаем конфигурацию Firebase -->
-    <script src="firebase-config.js"></script>
+    <!-- Затем конфигурация -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js"></script>
+    <script>
+        // Конфигурация Firebase
+        const firebaseConfig = {
+            apiKey: "AIzaSyDpLElX0YR32nUHwASpK-ewBJ_6uWixOiI",
+            authDomain: "cryptoverseplatform.firebaseapp.com",
+            projectId: "cryptoverseplatform",
+            storageBucket: "cryptoverseplatform.firebasestorage.app",
+            messagingSenderId: "533486874343",
+            appId: "1:533486874343:web:bcf58f3c2247942ebb7c42"
+        };
 
+        // Инициализируем Firebase сразу
+        try {
+            if (firebase && firebase.initializeApp) {
+                firebase.initializeApp(firebaseConfig);
+                console.log('Firebase инициализирован');
+            }
+        } catch (e) {
+            console.log('Firebase не загружен, будет оффлайн режим');
+        }
+    </script>
+
+    <!-- Затем ваш app.js -->
+    <script src="app.js"></script>
 </head>
 
 <body>
