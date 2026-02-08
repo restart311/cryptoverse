@@ -18,6 +18,7 @@ let ordersRef;
 let gamesRef;
 let projectsRef;
 let notificationsRef;
+let cryptoRef;
 
 // === ОСНОВНОЙ ОБЪЕКТ ПЛАТФОРМЫ (ДЛЯ КЛИЕНТА) ===
 const platform = {
@@ -101,169 +102,126 @@ async function initPlatform() {
         }, 1000);
     }
 }
-try {
-    console.log("Начало инициализации платформы...");
-
-    // Проверяем, находится ли пользователь в Telegram
-    if (window.Telegram && Telegram.WebApp) {
-        console.log("Telegram WebApp обнаружен");
-        initTelegramWebApp();
-    }
-
-    // Проверяем, что Firebase доступен и инициализирован
-    if (!firebaseInitialized) {
-        console.warn("Firebase не инициализирован, используем оффлайн-режим");
-        return initPlatformOffline();
-    }
-
-    console.log("Инициализация Firebase сервисов...");
-
-    // Получаем ссылки на Firebase сервисы
-    db = firebase.firestore();
-    auth = firebase.auth();
-
-    // Создаем ссылки на коллекции
-    usersRef = db.collection("users");
-    dealsRef = db.collection("deals");
-    ordersRef = db.collection("orders");
-    gamesRef = db.collection("games");
-    projectsRef = db.collection("projects");
-    notificationsRef = db.collection("notifications");
-    cryptoRef = db.collection("crypto");
-
-    console.log("Firebase сервисы готовы");
-
-    // Авторизация через Telegram или анонимно
-    await initAuth();
-
-    // Загружаем начальные данные
-    await loadInitialData();
-
-    // Настраиваем реальные обновления
-    setupRealtimeUpdates();
-
-    // Инициализируем интерфейс
-    initUI();
-
-    // Скрываем загрузку
-    hideLoading();
-
-    console.log("Платформа успешно инициализирована");
-
-} catch (error) {
-    console.error("Критическая ошибка инициализации:", error);
-    hideLoading();
-    showError("Ошибка загрузки. Переход в оффлайн-режим");
-
-    // Запускаем оффлайн режим
-    setTimeout(() => {
-        initPlatformOffline();
-    }, 1000);
-}
 
 // === АВТОРИЗАЦИЯ ===
 async function initAuth() {
-    // Если пользователь в Telegram, используем его данные
-    if (window.Telegram && Telegram.WebApp.initDataUnsafe?.user) {
-        const tgUser = Telegram.WebApp.initDataUnsafe.user;
-        const userId = `tg_${tgUser.id}`;
+    try {
+        // Если пользователь в Telegram, используем его данные
+        if (window.Telegram && Telegram.WebApp && Telegram.WebApp.initDataUnsafe?.user) {
+            const tgUser = Telegram.WebApp.initDataUnsafe.user;
+            const userId = `tg_${tgUser.id}`;
 
-        // Создаем кастомный токен через ваш сервер
-        // Для теста используем анонимную авторизацию
-        const credential = await auth.signInAnonymously();
-        currentUser = credential.user;
+            // Создаем кастомный токен через ваш сервер
+            // Для теста используем анонимную авторизацию
+            const credential = await auth.signInAnonymously();
+            currentUser = credential.user;
 
-        // Сохраняем/обновляем данные пользователя
-        await usersRef.doc(userId).set({
-            id: userId,
-            telegramId: tgUser.id,
-            username: tgUser.username || `user_${tgUser.id}`,
-            firstName: tgUser.first_name,
-            lastName: tgUser.last_name,
-            photoUrl: tgUser.photo_url,
-            balance: 0,
-            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-            lastSeen: firebase.firestore.FieldValue.serverTimestamp(),
-            online: true
-        }, { merge: true });
+            // Сохраняем/обновляем данные пользователя
+            await usersRef.doc(userId).set({
+                id: userId,
+                telegramId: tgUser.id,
+                username: tgUser.username || `user_${tgUser.id}`,
+                firstName: tgUser.first_name,
+                lastName: tgUser.last_name,
+                photoUrl: tgUser.photo_url,
+                balance: 0,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                lastSeen: firebase.firestore.FieldValue.serverTimestamp(),
+                online: true
+            }, { merge: true });
 
-        currentUser.uid = userId;
+            currentUser.uid = userId;
 
-    } else {
-        // Анонимная авторизация
-        const credential = await auth.signInAnonymously();
-        currentUser = credential.user;
+        } else {
+            // Анонимная авторизация
+            const credential = await auth.signInAnonymously();
+            currentUser = credential.user;
 
-        await usersRef.doc(currentUser.uid).set({
-            id: currentUser.uid,
-            username: `user_${Date.now()}`,
-            balance: 0,
-            createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-            lastSeen: firebase.firestore.FieldValue.serverTimestamp(),
-            online: true
-        }, { merge: true });
+            await usersRef.doc(currentUser.uid).set({
+                id: currentUser.uid,
+                username: `user_${Date.now()}`,
+                balance: 0,
+                createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+                lastSeen: firebase.firestore.FieldValue.serverTimestamp(),
+                online: true
+            }, { merge: true });
+        }
+
+        // Обновляем статус онлайн
+        setUserOnline(true);
+
+        // Отслеживаем статус подключения
+        if (firebase.database) {
+            firebase.database().ref('.info/connected').on('value', (snapshot) => {
+                platform.tempData.isOnline = snapshot.val() === true;
+                updateConnectionStatus();
+            });
+        }
+
+    } catch (error) {
+        console.error("Ошибка авторизации:", error);
+        throw error;
     }
-
-    // Обновляем статус онлайн
-    setUserOnline(true);
-
-    // Отслеживаем статус подключения
-    firebase.database().ref('.info/connected').on('value', (snapshot) => {
-        platform.tempData.isOnline = snapshot.val() === true;
-        updateConnectionStatus();
-    });
 }
 
 // === ЗАГРУЗКА ДАННЫХ ===
 async function loadInitialData() {
     showLoading("Загрузка данных...");
 
-    // 1. Загружаем данные пользователя
-    const userDoc = await usersRef.doc(currentUser.uid).get();
-    platform.userData = userDoc.data() || {};
-    platform.balance = platform.userData.balance || 0;
+    try {
+        // 1. Загружаем данные пользователя
+        const userDoc = await usersRef.doc(currentUser.uid).get();
+        platform.userData = userDoc.data() || {};
+        platform.balance = platform.userData.balance || 0;
 
-    // 2. Загружаем проекты
-    const projectsSnapshot = await projectsRef.get();
-    projectsSnapshot.forEach(doc => {
-        platform.projects[doc.id] = doc.data();
-    });
+        // 2. Загружаем проекты
+        const projectsSnapshot = await projectsRef.get();
+        projectsSnapshot.forEach(doc => {
+            platform.projects[doc.id] = doc.data();
+        });
 
-    // 3. Загружаем сделки (только активные)
-    const dealsSnapshot = await dealsRef.where('status', '==', 'active').get();
-    platform.deals = [];
-    dealsSnapshot.forEach(doc => {
-        platform.deals.push({ id: doc.id, ...doc.data() });
-    });
+        // 3. Загружаем сделки (только активные)
+        const dealsSnapshot = await dealsRef.where('status', '==', 'active').get();
+        platform.deals = [];
+        dealsSnapshot.forEach(doc => {
+            platform.deals.push({ id: doc.id, ...doc.data() });
+        });
 
-    // 4. Загружаем ордеры
-    const ordersSnapshot = await ordersRef.orderBy('timestamp', 'desc').limit(50).get();
-    platform.orders = [];
-    ordersSnapshot.forEach(doc => {
-        platform.orders.push({ id: doc.id, ...doc.data() });
-    });
+        // 4. Загружаем ордеры
+        const ordersSnapshot = await ordersRef.orderBy('timestamp', 'desc').limit(50).get();
+        platform.orders = [];
+        ordersSnapshot.forEach(doc => {
+            platform.orders.push({ id: doc.id, ...doc.data() });
+        });
 
-    // 5. Загружаем крипто-цены
-    const cryptoSnapshot = await cryptoRef.doc('prices').get();
-    platform.cryptoPrices = cryptoSnapshot.data() || {};
+        // 5. Загружаем крипто-цены
+        const cryptoSnapshot = await cryptoRef.doc('prices').get();
+        platform.cryptoPrices = cryptoSnapshot.data() || {};
 
-    // 6. Загружаем уведомления пользователя
-    const notificationsSnapshot = await notificationsRef
-        .where('userId', '==', currentUser.uid)
-        .orderBy('timestamp', 'desc')
-        .limit(20)
-        .get();
+        // 6. Загружаем уведомления пользователя
+        const notificationsSnapshot = await notificationsRef
+            .where('userId', '==', currentUser.uid)
+            .orderBy('timestamp', 'desc')
+            .limit(20)
+            .get();
 
-    platform.notifications = [];
-    notificationsSnapshot.forEach(doc => {
-        platform.notifications.push({ id: doc.id, ...doc.data() });
-    });
+        platform.notifications = [];
+        notificationsSnapshot.forEach(doc => {
+            platform.notifications.push({ id: doc.id, ...doc.data() });
+        });
 
-    hideLoading();
+    } catch (error) {
+        console.error("Ошибка загрузки данных:", error);
+        throw error;
+    } finally {
+        hideLoading();
+    }
 }
 
 // === НАСТРОЙКА РЕАЛЬНЫХ ОБНОВЛЕНИЙ ===
 function setupRealtimeUpdates() {
+    if (!firebaseInitialized) return;
+
     // 1. Слушаем обновления баланса пользователя
     usersRef.doc(currentUser.uid).onSnapshot((doc) => {
         if (doc.exists) {
@@ -610,43 +568,46 @@ function showLoading(message = "Загрузка...") {
     `;
     document.body.appendChild(loadingEl);
 
-    // Добавляем стили
-    const style = document.createElement('style');
-    style.textContent = `
-        .loading-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(0,0,0,0.8);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-        }
-        .loading-spinner {
-            text-align: center;
-        }
-        .spinner {
-            width: 50px;
-            height: 50px;
-            border: 5px solid var(--secondary);
-            border-top: 5px solid transparent;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-            margin: 0 auto 15px;
-        }
-        .loading-text {
-            color: white;
-            font-size: 1rem;
-        }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-    `;
-    document.head.appendChild(style);
+    // Добавляем стили, если их еще нет
+    if (!document.querySelector('#loading-styles')) {
+        const style = document.createElement('style');
+        style.id = 'loading-styles';
+        style.textContent = `
+            .loading-overlay {
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0,0,0,0.8);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 9999;
+            }
+            .loading-spinner {
+                text-align: center;
+            }
+            .spinner {
+                width: 50px;
+                height: 50px;
+                border: 5px solid var(--secondary);
+                border-top: 5px solid transparent;
+                border-radius: 50%;
+                animation: spin 1s linear infinite;
+                margin: 0 auto 15px;
+            }
+            .loading-text {
+                color: white;
+                font-size: 1rem;
+            }
+            @keyframes spin {
+                0% { transform: rotate(0deg); }
+                100% { transform: rotate(360deg); }
+            }
+        `;
+        document.head.appendChild(style);
+    }
 }
 
 function hideLoading() {
@@ -676,14 +637,14 @@ function showNotification(message, type = 'info') {
     notification.className = `notification ${type}`;
     notification.innerHTML = `
         <div class="notification-content">
-            <i class="fas fa-${type === 'success' ? 'check-circle' : 'info-circle'}"></i>
+            <i class="fas fa-${type === 'success' ? 'check-circle' : type === 'error' ? 'exclamation-circle' : 'info-circle'}"></i>
             ${message}
         </div>
     `;
 
     document.body.appendChild(notification);
 
-    // Добавляем стили
+    // Добавляем стили, если их еще нет
     if (!document.querySelector('#notification-styles')) {
         const style = document.createElement('style');
         style.id = 'notification-styles';
@@ -707,6 +668,9 @@ function showNotification(message, type = 'info') {
             .notification.error {
                 border-left-color: var(--accent);
             }
+            .notification.warning {
+                border-left-color: var(--warning);
+            }
             .notification-content {
                 display: flex;
                 align-items: center;
@@ -717,6 +681,10 @@ function showNotification(message, type = 'info') {
             @keyframes slideIn {
                 from { transform: translateX(100%); opacity: 0; }
                 to { transform: translateX(0); opacity: 1; }
+            }
+            @keyframes slideOut {
+                from { transform: translateX(0); opacity: 1; }
+                to { transform: translateX(100%); opacity: 0; }
             }
         `;
         document.head.appendChild(style);
@@ -745,7 +713,7 @@ async function createNotification(userId, title, message, type = 'info') {
 
 // Обновление статуса онлайн
 function setUserOnline(online) {
-    if (currentUser) {
+    if (currentUser && usersRef) {
         usersRef.doc(currentUser.uid).update({
             online: online,
             lastSeen: firebase.firestore.FieldValue.serverTimestamp()
@@ -789,7 +757,9 @@ function initTelegramWebApp() {
     tg.expand();
 
     // Скрываем кнопку "Назад"
-    tg.BackButton.hide();
+    if (tg.BackButton) {
+        tg.BackButton.hide();
+    }
 
     // Настраиваем тему
     const theme = tg.colorScheme;
@@ -798,10 +768,12 @@ function initTelegramWebApp() {
     }
 
     // Обработка платежей
-    tg.MainButton.setText("Пополнить баланс");
-    tg.MainButton.onClick(() => {
-        openDepositModal();
-    });
+    if (tg.MainButton) {
+        tg.MainButton.setText("Пополнить баланс");
+        tg.MainButton.onClick(() => {
+            openDepositModal();
+        });
+    }
 
     // Готовность приложения
     tg.ready();
@@ -832,14 +804,16 @@ function initUI() {
     const depositBtn = document.getElementById('btn-deposit');
     if (depositBtn) {
         depositBtn.addEventListener('click', function() {
-            document.getElementById('deposit-modal').style.display = 'flex';
+            const modal = document.getElementById('deposit-modal');
+            if (modal) modal.style.display = 'flex';
         });
     }
     
     const notificationBtn = document.getElementById('notification-btn');
     if (notificationBtn) {
         notificationBtn.addEventListener('click', function() {
-            document.getElementById('notification-modal').style.display = 'flex';
+            const modal = document.getElementById('notification-modal');
+            if (modal) modal.style.display = 'flex';
         });
     }
     
@@ -847,7 +821,8 @@ function initUI() {
     const closeButtons = document.querySelectorAll('.close-modal');
     closeButtons.forEach(btn => {
         btn.addEventListener('click', function() {
-            this.closest('.modal').style.display = 'none';
+            const modal = this.closest('.modal');
+            if (modal) modal.style.display = 'none';
         });
     });
     
@@ -923,7 +898,7 @@ document.addEventListener('DOMContentLoaded', function() {
 // Простой тест - если через 5 секунд всё ещё загрузка, показываем ошибку
 setTimeout(() => {
     const loadingEl = document.getElementById('global-loading');
-    if (loadingEl && loadingEl.style.display !== 'none') {
+    if (loadingEl) {
         hideLoading();
         showError("Не удалось загрузить приложение. Обновите страницу.");
         initPlatformOffline();
@@ -932,11 +907,6 @@ setTimeout(() => {
 
 // Обработка закрытия страницы
 window.addEventListener('beforeunload', function() {
-    setUserOnline(false);
-});
-
-// Обработка закрытия страницы
-window.addEventListener('beforeunload', function () {
     setUserOnline(false);
 });
 
@@ -973,48 +943,91 @@ function updateOnlineUsersCount(count) {
     }
 }
 
-// === ОФФЛАЙН РЕЖИМ ===
-function initPlatformOffline() {
-    console.log("Запуск в оффлайн режиме");
-    hideLoading();
+// Заглушки для отсутствующих функций
+function calculateNetworkFee(method, amount) {
+    return amount * 0.02; // 2% комиссия
+}
 
-    // Загружаем демо-данные
-    platform.balance = 10000;
-    platform.userData = {
-        username: "Гость",
-        balance: 10000
-    };
+async function getUserInvestment(projectId) {
+    return { share: 0 };
+}
 
-    // Фиктивные данные для отображения
-    platform.cryptoPrices = {
-        dogemoon: 125,
-        pepe: 8.5,
-        shiba: 0.24,
-        bonk: 180,
-        floki: 1.2
-    };
+async function getUserCryptoHoldings(asset) {
+    return 0;
+}
 
-    platform.deals = [
-        {
-            id: "demo1",
-            type: "sell",
-            asset: "dogemoon",
-            quantity: 100,
-            price: 130,
-            userName: "Демо-пользователь",
-            description: "Продажа DogeMoon токенов"
-        }
-    ];
+async function reserveAssetsForDeal(dealData) {
+    console.log("Резервирование активов для сделки:", dealData);
+}
 
-    // Обновляем интерфейс
-    updateBalanceDisplay();
-    updateCryptoPricesDisplay();
-    updateDealsList();
+async function findActiveWheelGame() {
+    return null;
+}
 
-    // Показываем уведомление
-    setTimeout(() => {
-        showNotification("Вы в оффлайн-режиме. Функции ограничены.", "warning");
-    }, 500);
+async function createNewWheelGame() {
+    return { id: 'demo_game' };
+}
 
-    console.log("Оффлайн-режим активирован");
+async function getGamePlayers(gameId) {
+    return [];
+}
+
+async function addPlayerToGame(gameId, player) {
+    console.log("Добавление игрока в игру:", gameId, player);
+}
+
+async function updateUserBalance(amount) {
+    if (usersRef && currentUser) {
+        await usersRef.doc(currentUser.uid).update({
+            balance: firebase.firestore.FieldValue.increment(amount)
+        });
+    }
+}
+
+async function updateUserCryptoHoldings(coin, amount) {
+    console.log("Обновление крипто-холдингов:", coin, amount);
+}
+
+function showSection(sectionId) {
+    console.log("Показ секции:", sectionId);
+    const sections = document.querySelectorAll('.section');
+    sections.forEach(section => {
+        section.style.display = 'none';
+    });
+    
+    const targetSection = document.getElementById(sectionId);
+    if (targetSection) {
+        targetSection.style.display = 'block';
+    }
+}
+
+function openDepositModal() {
+    const modal = document.getElementById('deposit-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+    }
+}
+
+function updateDealsList() {
+    console.log("Обновление списка сделок");
+}
+
+function updateOrderBook() {
+    console.log("Обновление стакана заказов");
+}
+
+function updateCryptoPricesDisplay() {
+    console.log("Обновление отображения крипто-цен");
+}
+
+function updateNotifications() {
+    console.log("Обновление уведомлений");
+}
+
+function updateNotificationBadge(count) {
+    const badge = document.getElementById('notification-badge');
+    if (badge) {
+        badge.textContent = count;
+        badge.style.display = count > 0 ? 'flex' : 'none';
+    }
 }
