@@ -186,6 +186,39 @@
                             <i class="fas fa-chart-line"></i> ПОДРОБНЕЕ
                         </button>
                     </div>
+
+                    <!-- Добавлено в home-section после кнопки ПОДРОБНЕЕ -->
+                    <!-- Кнопка ИНВЕСТИРОВАТЬ теперь компактная -->
+                    <button class="btn btn-success invest-button-fix" id="btn-invest-now"
+                        style="width: auto; display: inline-block; margin: 10px auto;">
+                        <i class="fas fa-chart-line"></i> ИНВЕСТИРОВАТЬ
+                    </button>
+
+                    <!-- Новое модальное окно для инвестирования -->
+                    <div class="modal" id="invest-modal">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h3 style="color: var(--secondary); font-size: 1.1rem;"><i class="fas fa-building"></i>
+                                    ИНВЕСТИРОВАТЬ В ПРОЕКТ</h3>
+                                <button class="close-modal">&times;</button>
+                            </div>
+                            <div style="padding: 15px;">
+                                <div class="form-group">
+                                    <label>Сумма инвестиции (SKY):</label>
+                                    <input type="number" id="invest-amount" placeholder="Минимум 1000 SKY" min="1000"
+                                        step="100">
+                                </div>
+                                <div
+                                    style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 12px; margin: 15px 0;">
+                                    <p style="color: var(--gray);">1 доля = 1000 SKY</p>
+                                    <p>Вы получите долей: <span id="invest-shares">0</span></p>
+                                </div>
+                                <button class="btn btn-success btn-block" id="btn-invest">
+                                    <i class="fas fa-check"></i> ИНВЕСТИРОВАТЬ
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
 
@@ -1167,46 +1200,6 @@
             </div>
         </div>
     </div>
-    <script>
-        // Инициализация Firebase
-        document.addEventListener('DOMContentLoaded', function () {
-            // Проверяем, что Firebase доступен
-            if (typeof firebase !== 'undefined' && window.firebaseConfig) {
-                try {
-                    // Инициализируем Firebase
-                    firebase.initializeApp(window.firebaseConfig);
-
-                    console.log('Firebase успешно инициализирован!');
-
-                    // Теперь можно использовать Firebase
-                    const db = firebase.firestore();
-                    const auth = firebase.auth();
-
-                    // Запускаем вашу платформу
-                    initPlatform();
-
-                } catch (error) {
-                    console.error('Ошибка инициализации Firebase:', error);
-                    // Запускаем платформу в оффлайн режиме
-                    initPlatformOffline();
-                }
-            } else {
-                console.log('Firebase не загружен. Запускаем оффлайн режим.');
-                initPlatformOffline();
-            }
-        });
-
-        function initPlatform() {
-            // Тот же код, что у вас был, но теперь с Firebase
-            // Я предоставлю исправленный код ниже
-        }
-
-        function initPlatformOffline() {
-            // Оффлайн версия без Firebase
-            console.log('Запуск в оффлайн режиме');
-            // Инициализация без сервера
-        }
-    </script>
 
 </body>
 
