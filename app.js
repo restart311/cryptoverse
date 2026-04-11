@@ -1,6 +1,8 @@
+// === СТРОГИЙ РЕЖИМ ===
+'use strict';
+
 // === КОНФИГУРАЦИЯ FIREBASE ===
 let firebaseInitialized = false;
-
 try {
     if (typeof firebase !== 'undefined' && firebase.apps && firebase.apps.length > 0) {
         firebaseInitialized = true;
@@ -46,6 +48,8 @@ const platform = {
         lastUpdate: Date.now(),
         animationQueue: [],
         selectedCoin: 'dogemoon',
+        currentInvestProject: 'millennium-tower',
+        partialDeal: null,
         wheelGame: {
             roundEnd: Date.now() + 60000,
             players: [],
@@ -63,20 +67,51 @@ const platform = {
 // === КОНСТАНТЫ ===
 const SKY_TO_USD = 0.001;
 const USD_TO_SKY = 800;
+const PROJECT_TOTAL_SHARES = 1000000;
+const PROJECT_MONTHLY_PROFIT = 20000000;
 
-// === ОСНОВНАЯ ИНИЦИАЛИЗАЦИЯ ===
+// ================== TELEGRAM WEB APP ==================
+function initTelegramWebApp() {
+    try {
+        if (!window.Telegram || !Telegram.WebApp) {
+            console.warn('Telegram WebApp не обнаружен');
+            return false;
+        }
+
+        const tg = Telegram.WebApp;
+        tg.expand();
+        tg.ready();
+
+        const theme = tg.colorScheme;
+        document.documentElement.setAttribute('data-theme', theme);
+
+        if (tg.MainButton) {
+            tg.MainButton.setText('Пополнить баланс');
+            tg.MainButton.onClick(() => openDepositModal());
+            tg.MainButton.show();
+        }
+
+        if (tg.BackButton) {
+            tg.BackButton.onClick(() => {
+                showSection('home');
+                tg.BackButton.hide();
+            });
+        }
+
+        console.log('Telegram WebApp инициализирован');
+        return true;
+    } catch (error) {
+        console.error('Ошибка инициализации Telegram WebApp:', error);
+        return false;
+    }
+}
+
+// ================== ИНИЦИАЛИЗАЦИЯ ПЛАТФОРМЫ ==================
 async function initPlatform() {
     try {
         console.log("Начало инициализации платформы...");
 
-        if (window.Telegram && Telegram.WebApp) {
-            console.log("Telegram WebApp обнаружен");
-            try {
-                initTelegramWebApp();
-            } catch (tgError) {
-                console.warn("Ошибка Telegram WebApp:", tgError);
-            }
-        }
+        initTelegramWebApp();
 
         if (!firebaseInitialized) {
             console.warn("Firebase не инициализирован, используем оффлайн-режим");
@@ -86,7 +121,7 @@ async function initPlatform() {
         try {
             db = firebase.firestore();
             auth = firebase.auth();
-            
+
             usersRef = db.collection("users");
             dealsRef = db.collection("deals");
             ordersRef = db.collection("orders");
@@ -95,7 +130,7 @@ async function initPlatform() {
             notificationsRef = db.collection("notifications");
             cryptoRef = db.collection("crypto");
             withdrawalsRef = db.collection("withdrawals");
-            
+
             console.log("Firebase сервисы готовы");
         } catch (firebaseError) {
             console.error("Ошибка Firebase:", firebaseError);
@@ -126,19 +161,20 @@ async function initPlatform() {
         console.log("Платформа успешно инициализирована");
 
         startPayoutTimer();
-        initAdStats(); // Загружаем статистику рекламы
+        initAdStats();
+        checkAndResetAdCounter();
+
+        updateNotificationBadge(0);
 
     } catch (error) {
         console.error("Критическая ошибка инициализации:", error);
         hideLoading();
         showError("Ошибка загрузки. Переход в оффлайн-режим");
-        setTimeout(() => {
-            initPlatformOffline();
-        }, 1000);
+        setTimeout(() => initPlatformOffline(), 1000);
     }
 }
 
-// === АВТОРИЗАЦИЯ ===
+// ================== АВТОРИЗАЦИЯ ==================
 async function initAuth() {
     try {
         if (window.Telegram && Telegram.WebApp && Telegram.WebApp.initDataUnsafe?.user) {
@@ -158,6 +194,7 @@ async function initAuth() {
                     photoUrl: tgUser.photo_url,
                     balance: 1000,
                     portfolio: platform.portfolio,
+                    projectShares: { 'millennium-tower': 0 },
                     createdAt: firebase.firestore.FieldValue.serverTimestamp(),
                     lastSeen: firebase.firestore.FieldValue.serverTimestamp(),
                     online: true
@@ -173,8 +210,6 @@ async function initAuth() {
         }
 
         setUserOnline(true);
-
-        // Удалён код, использующий Realtime Database (он вызывал предупреждение)
 
     } catch (error) {
         console.error("Ошибка авторизации:", error);
@@ -192,6 +227,7 @@ async function initAnonymousAuth() {
             username: `user_${Date.now()}`,
             balance: 1000,
             portfolio: platform.portfolio,
+            projectShares: { 'millennium-tower': 0 },
             createdAt: firebase.firestore.FieldValue.serverTimestamp(),
             lastSeen: firebase.firestore.FieldValue.serverTimestamp(),
             online: true
@@ -202,7 +238,7 @@ async function initAnonymousAuth() {
     }
 }
 
-// === ЗАГРУЗКА ДАННЫХ ===
+// ================== ЗАГРУЗКА ДАННЫХ ==================
 async function loadInitialData() {
     showLoading("Загрузка данных...");
 
@@ -213,39 +249,26 @@ async function loadInitialData() {
                 platform.userData = userDoc.data();
                 platform.balance = platform.userData.balance || 0;
                 platform.portfolio = platform.userData.portfolio || platform.portfolio;
+                if (!platform.userData.projectShares) {
+                    platform.userData.projectShares = { 'millennium-tower': 0 };
+                }
             }
         }
 
-        // Загрузка проектов
         if (projectsRef) {
             const projectsSnapshot = await projectsRef.get();
             if (projectsSnapshot.empty) {
-                platform.projects['millennium-tower'] = {
-                    name: 'Башня Тысячелетия',
-                    target: 5500000000,
-                    raised: 5200000000,
-                    yield: 8.3,
-                    duration: 15,
-                    exitYear: 2035,
-                    description: 'Самое высокое здание в мире (1100 м). Офисы, апартаменты, отель.',
-                    investors: 24587
-                };
+                ensureDefaultProject();
             } else {
                 projectsSnapshot.forEach(doc => {
-                    platform.projects[doc.id] = doc.data();
+                    const data = doc.data();
+                    data.raised = data.raised || 0;
+                    platform.projects[doc.id] = data;
                 });
+                ensureDefaultProject();
             }
         } else {
-            platform.projects['millennium-tower'] = {
-                name: 'Башня Тысячелетия',
-                target: 5500000000,
-                raised: 5200000000,
-                yield: 8.3,
-                duration: 15,
-                exitYear: 2035,
-                description: 'Самое высокое здание в мире (1100 м). Офисы, апартаменты, отель.',
-                investors: 24587
-            };
+            ensureDefaultProject();
         }
 
         if (dealsRef) {
@@ -297,12 +320,13 @@ async function loadInitialData() {
                     platform.notifications.push({ id: doc.id, ...doc.data() });
                 });
             } catch (e) {
-                console.warn("Не удалось загрузить уведомления (возможно, нужен индекс). Используем демо.");
+                console.warn("Не удалось загрузить уведомления. Используем демо.");
                 platform.notifications = [];
             }
+        } else {
+            platform.notifications = [];
         }
 
-        // Загрузка истории выводов
         await loadWithdrawHistory();
 
         console.log("Данные успешно загружены");
@@ -310,16 +334,35 @@ async function loadInitialData() {
     } catch (error) {
         console.error("Ошибка загрузки данных:", error);
         platform.balance = 10000;
-        platform.userData = { username: "Гость", balance: 10000 };
+        platform.userData = {
+            username: "Гость",
+            balance: 10000,
+            projectShares: { 'millennium-tower': 0 }
+        };
         platform.cryptoPrices = getDemoCryptoPrices();
         platform.deals = getDemoDeals();
         platform.orders = getDemoOrders();
+        ensureDefaultProject();
     } finally {
         hideLoading();
     }
 }
 
-// Загрузка истории выводов
+function ensureDefaultProject() {
+    if (!platform.projects['millennium-tower']) {
+        platform.projects['millennium-tower'] = {
+            name: 'Башня Тысячелетия',
+            target: 5500000000,
+            raised: 0,
+            yield: 8.3,
+            duration: 15,
+            exitYear: 2035,
+            description: 'Самое высокое здание в мире (1100 м). Офисы, апартаменты, отель.',
+            investors: 0
+        };
+    }
+}
+
 async function loadWithdrawHistory() {
     if (!withdrawalsRef || !currentUser) {
         const demoHistory = [
@@ -339,12 +382,12 @@ async function loadWithdrawHistory() {
         snapshot.forEach(doc => history.push({ id: doc.id, ...doc.data() }));
         updateWithdrawHistory(history);
     } catch (error) {
-        console.error("Ошибка загрузки истории выводов (возможно, нужен индекс):", error);
+        console.error("Ошибка загрузки истории выводов:", error);
         updateWithdrawHistory([]);
     }
 }
 
-// === НАСТРОЙКА ОБНОВЛЕНИЙ В РЕАЛЬНОМ ВРЕМЕНИ ===
+// ================== REALTIME ОБНОВЛЕНИЯ ==================
 function setupRealtimeUpdates() {
     if (!firebaseInitialized || !currentUser) return;
 
@@ -355,8 +398,10 @@ function setupRealtimeUpdates() {
                     const data = doc.data();
                     platform.balance = data.balance || 0;
                     platform.portfolio = data.portfolio || platform.portfolio;
+                    platform.userData.projectShares = data.projectShares || { 'millennium-tower': 0 };
                     updateBalanceDisplay();
                     updatePortfolioDisplay();
+                    updateProjectStats();
                 }
             }, (error) => {
                 console.error("Ошибка обновления баланса:", error);
@@ -399,11 +444,9 @@ function setupRealtimeUpdates() {
                         platform.notifications.push({ id: doc.id, ...doc.data() });
                     });
                     updateNotifications();
-                    
-                    const unread = platform.notifications.filter(n => !n.read).length;
-                    updateNotificationBadge(unread);
+                    updateNotificationBadge(platform.notifications.filter(n => !n.read).length);
                 }, (error) => {
-                    console.error("Ошибка обновления уведомлений (возможно, нужен индекс):", error);
+                    console.error("Ошибка обновления уведомлений:", error);
                 });
         }
 
@@ -426,7 +469,7 @@ function setupRealtimeUpdates() {
                     snapshot.forEach(doc => history.push({ id: doc.id, ...doc.data() }));
                     updateWithdrawHistory(history);
                 }, (error) => {
-                    console.error("Ошибка обновления истории выводов (возможно, нужен индекс):", error);
+                    console.error("Ошибка обновления истории выводов:", error);
                 });
         }
 
@@ -435,9 +478,7 @@ function setupRealtimeUpdates() {
     }
 }
 
-// === ОСНОВНЫЕ ФУНКЦИИ ===
-
-// 1. ПОПОЛНЕНИЕ БАЛАНСА
+// ================== ОСНОВНЫЕ ОПЕРАЦИИ ==================
 async function processDeposit(amountUSD) {
     if (!firebaseInitialized || !currentUser) {
         showError("Функция недоступна в оффлайн-режиме");
@@ -481,7 +522,6 @@ async function processDeposit(amountUSD) {
     }
 }
 
-// 2. ВЫВОД СРЕДСТВ
 async function processWithdraw(amountSKY, method, details) {
     if (!firebaseInitialized || !currentUser) {
         showError("Функция недоступна в оффлайн-режиме");
@@ -537,7 +577,6 @@ async function processWithdraw(amountSKY, method, details) {
     }
 }
 
-// 3. ПОКУПКА ТОКЕНА
 function buyToken(coin, amount) {
     if (!amount || amount <= 0) {
         showError("Введите корректное количество");
@@ -575,6 +614,13 @@ function buyToken(coin, amount) {
     };
     platform.orders.unshift(order);
 
+    createNotification(
+        currentUser ? currentUser.uid : 'guest',
+        'Покупка токенов',
+        `Куплено ${amount} ${coin.toUpperCase()} за ${total.toFixed(2)} SKY`,
+        'info'
+    );
+
     updateBalanceDisplay();
     updatePortfolioDisplay();
     updateOrderBook();
@@ -582,7 +628,6 @@ function buyToken(coin, amount) {
     showSuccess(`Куплено ${amount} ${coin.toUpperCase()} за ${total.toFixed(2)} SKY`);
 }
 
-// 4. ПРОДАЖА ТОКЕНА
 function sellToken(coin, amount) {
     if (!amount || amount <= 0) {
         showError("Введите корректное количество");
@@ -621,6 +666,13 @@ function sellToken(coin, amount) {
     };
     platform.orders.unshift(order);
 
+    createNotification(
+        currentUser ? currentUser.uid : 'guest',
+        'Продажа токенов',
+        `Продано ${amount} ${coin.toUpperCase()}, получено ${total.toFixed(2)} SKY`,
+        'info'
+    );
+
     updateBalanceDisplay();
     updatePortfolioDisplay();
     updateOrderBook();
@@ -628,45 +680,50 @@ function sellToken(coin, amount) {
     showSuccess(`Продано ${amount} ${coin.toUpperCase()}, получено ${total.toFixed(2)} SKY`);
 }
 
-// === НОВАЯ ФУНКЦИЯ: ИНВЕСТИРОВАНИЕ В ПРОЕКТ ===
+// ================== ИНВЕСТИРОВАНИЕ ==================
 function investInProject(projectId, amountSKY) {
     if (!amountSKY || amountSKY <= 0) {
         showError("Введите корректную сумму");
         return;
     }
 
-    const project = platform.projects[projectId];
+    ensureDefaultProject();
+    let project = platform.projects[projectId];
     if (!project) {
-        showError("Проект не найден");
-        return;
+        platform.projects[projectId] = {
+            name: 'Башня Тысячелетия',
+            target: 5500000000,
+            raised: 0,
+            yield: 8.3,
+            duration: 15,
+            exitYear: 2035,
+            description: 'Самое высокое здание в мире (1100 м).',
+            investors: 0
+        };
+        project = platform.projects[projectId];
     }
 
-    // Проверяем достаточно ли средств
-    if (amountSKY > platform.balance) {
-        showError("Недостаточно средств");
-        return;
-    }
-
-    // Стоимость одной доли = 1000 SKY (условно)
-    const sharesBought = Math.floor(amountSKY / 1000);
-    if (sharesBought === 0) {
+    if (amountSKY < 1000) {
         showError("Минимальная инвестиция: 1000 SKY");
         return;
     }
 
-    const cost = sharesBought * 1000; // может быть меньше amountSKY, если сумма не кратна 1000
+    if (amountSKY > platform.balance) {
+        showError(`Недостаточно средств. Доступно: ${platform.balance.toLocaleString()} SKY`);
+        return;
+    }
 
-    // Списание баланса
+    const sharesBought = Math.floor(amountSKY / 1000);
+    const cost = sharesBought * 1000;
+
     platform.balance -= cost;
 
-    // Добавление долей в портфель пользователя
     if (!platform.userData.projectShares) platform.userData.projectShares = {};
     platform.userData.projectShares[projectId] = (platform.userData.projectShares[projectId] || 0) + sharesBought;
 
-    // Обновление raised проекта (если нужно)
-    project.raised += cost;
+    project.raised = (project.raised || 0) + cost;
+    project.investors = (project.investors || 0) + 1;
 
-    // Сохраняем в Firebase (если онлайн)
     if (firebaseInitialized && currentUser && usersRef) {
         usersRef.doc(currentUser.uid).update({
             balance: platform.balance,
@@ -675,347 +732,429 @@ function investInProject(projectId, amountSKY) {
 
         if (projectsRef) {
             projectsRef.doc(projectId).update({
-                raised: project.raised
+                raised: project.raised,
+                investors: project.investors
             }).catch(err => console.warn("Ошибка обновления проекта:", err));
         }
     }
 
+    createNotification(
+        currentUser ? currentUser.uid : 'guest',
+        'Инвестиция в проект',
+        `Инвестировано ${cost.toLocaleString()} SKY в проект "${project.name}"`,
+        'success'
+    );
+
     updateBalanceDisplay();
     updateProjectStats();
+
+    const projectDetailModal = document.getElementById('project-detail-modal');
+    if (projectDetailModal && projectDetailModal.style.display === 'flex') {
+        showFullProjectDetail(projectId);
+    }
 
     showSuccess(`Инвестировано ${cost} SKY, получено ${sharesBought} долей в проекте!`);
 }
 
-// === TELEGRAM WEB APP ===
-function initTelegramWebApp() {
-    try {
-        const tg = window.Telegram.WebApp;
-        
-        tg.expand();
-        
-        if (tg.BackButton) {
-            tg.BackButton.hide();
-        }
-        
-        const theme = tg.colorScheme;
-        if (theme === 'dark') {
-            document.documentElement.setAttribute('data-theme', 'dark');
-        }
-        
-        if (tg.MainButton) {
-            tg.MainButton.setText("Пополнить баланс");
-            tg.MainButton.onClick(() => {
-                openDepositModal();
-            });
-        }
-        
-        tg.ready();
-        console.log("Telegram WebApp инициализирован");
-    } catch (error) {
-        console.warn("Ошибка инициализации Telegram WebApp:", error);
+// ================== ДЕТАЛИ ПРОЕКТА ==================
+function showFullProjectDetail(projectId) {
+    ensureDefaultProject();
+    let project = platform.projects[projectId];
+    if (!project) {
+        project = {
+            name: 'Башня Тысячелетия',
+            target: 5500000000,
+            raised: 0,
+            yield: 8.3,
+            duration: 15,
+            exitYear: 2035,
+            description: 'Самое высокое здание в мире (1100 м). Офисы, апартаменты, отель.',
+            investors: 0
+        };
     }
+
+    const modal = document.getElementById('project-detail-modal');
+    const content = document.getElementById('project-detail-content');
+    if (!modal || !content) return;
+
+    const raised = project.raised || 0;
+    const target = project.target || 1;
+    const percent = (raised / target * 100).toFixed(1);
+
+    const userShares = platform.userData.projectShares?.[projectId] || 0;
+    const userPercent = (userShares / PROJECT_TOTAL_SHARES * 100).toFixed(4);
+    const userProfit = calculateUserProfit(projectId);
+
+    const soldShares = Math.floor(raised / 1000);
+    const otherInvestorsPercent = ((soldShares - userShares) / PROJECT_TOTAL_SHARES * 100).toFixed(2);
+    const unsoldPercent = (100 - (soldShares / PROJECT_TOTAL_SHARES * 100)).toFixed(2);
+
+    content.innerHTML = `
+        <h4 style="color: var(--secondary); margin-bottom: 15px;">${project.name}</h4>
+        <p style="color: var(--gray); line-height: 1.5; margin-bottom: 20px;">${project.description}</p>
+
+        <div class="project-stats">
+            <div class="stat-box">
+                <div class="stat-label">Собрано</div>
+                <div class="stat-value">$${(raised / 1e6).toFixed(1)}M</div>
+                <div style="color: var(--gray); font-size: 0.85rem;">из $${(target / 1e6).toFixed(1)}M</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Доходность</div>
+                <div class="stat-value">${project.yield}%</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-label">Срок</div>
+                <div class="stat-value">${project.duration} лет</div>
+            </div>
+        </div>
+
+        <div class="investment-progress" style="margin: 20px 0;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
+                <span>Прогресс сбора:</span>
+                <span style="color: var(--success);">${percent}%</span>
+            </div>
+            <div style="height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px;">
+                <div style="width: ${percent}%; height: 100%; background: linear-gradient(90deg, var(--secondary), var(--success)); border-radius: 4px;"></div>
+            </div>
+        </div>
+
+        <div class="share-chart-wrapper">
+            <div class="share-chart-info">
+                <h5 style="color: var(--secondary); margin-bottom: 15px;">Распределение долей</h5>
+                <div style="margin-bottom: 15px;">
+                    <div style="height: 30px; display: flex; border-radius: 6px; overflow: hidden; margin-bottom: 10px;">
+                        ${userShares > 0 ? `<div style="width: ${userPercent}%; background: #4CAF50;" title="Ваша доля"></div>` : ''}
+                        ${(soldShares - userShares) > 0 ? `<div style="width: ${otherInvestorsPercent}%; background: #2196F3;" title="Другие инвесторы"></div>` : ''}
+                        <div style="width: ${unsoldPercent}%; background: #9E9E9E;" title="Не продано"></div>
+                    </div>
+                    
+                    <div class="share-info-list">
+                        ${userShares > 0 ? `
+                        <div class="share-info-item">
+                            <span class="share-info-label"><span style="color: #4CAF50;">●</span> Ваша доля:</span>
+                            <span class="share-info-value">${userPercent}% (${userShares} долей)</span>
+                        </div>` : ''}
+                        
+                        ${(soldShares - userShares) > 0 ? `
+                        <div class="share-info-item">
+                            <span class="share-info-label"><span style="color: #2196F3;">●</span> Другие инвесторы:</span>
+                            <span class="share-info-value">${otherInvestorsPercent}%</span>
+                        </div>` : ''}
+                        
+                        <div class="share-info-item">
+                            <span class="share-info-label"><span style="color: #9E9E9E;">●</span> Доступно для покупки:</span>
+                            <span class="share-info-value">${unsoldPercent}%</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="share-chart-info">
+                <h5 style="color: var(--secondary); margin-bottom: 10px;">Ваша статистика</h5>
+                <div class="share-info-list">
+                    <div class="share-info-item">
+                        <span class="share-info-label">Ваши доли:</span>
+                        <span class="share-info-value">${userShares.toLocaleString()}</span>
+                    </div>
+                    <div class="share-info-item">
+                        <span class="share-info-label">Ваша доля в проекте:</span>
+                        <span class="share-info-value">${userPercent}%</span>
+                    </div>
+                    <div class="share-info-item">
+                        <span class="share-info-label">Ожидаемая прибыль в месяц:</span>
+                        <span class="share-info-value">$${userProfit.toFixed(2)}</span>
+                    </div>
+                    <div class="share-info-item">
+                        <span class="share-info-label">В SKY токенах:</span>
+                        <span class="share-info-value">${(userProfit / SKY_TO_USD).toFixed(2)} SKY</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="share-sell-note">
+            <h5><i class="fas fa-info-circle"></i> Условия выхода</h5>
+            <p style="font-size: 0.9rem; color: var(--gray);">После 2035 года вы сможете продать долю обратно компании за 125% от стоимости инвестиций. Досрочная продажа доступна на рынке.</p>
+        </div>
+
+        <div style="margin: 25px 0 10px; background: rgba(0,0,0,0.3); padding: 15px; border-radius: 12px;">
+            <h5 style="color: var(--success); margin-bottom: 15px;"><i class="fas fa-chart-line"></i> ИНВЕСТИРОВАТЬ В ПРОЕКТ</h5>
+            <div class="form-group">
+                <label>Сумма инвестиции (SKY):</label>
+                <input type="number" id="invest-amount-detail" class="invest-amount-detail" placeholder="Минимум 1000 SKY" min="1000" step="100" value="1000" max="${platform.balance}">
+            </div>
+            <div style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 12px; margin: 15px 0;">
+                <p style="color: var(--gray);">1 доля = 1000 SKY</p>
+                <p>Вы получите долей: <span id="invest-shares-detail">1</span></p>
+                <p style="color: var(--warning); margin-top: 8px;" id="invest-balance-info-detail">Доступно: ${platform.balance.toLocaleString()} SKY</p>
+            </div>
+            <button class="btn btn-success btn-block" id="btn-invest-detail">
+                <i class="fas fa-check"></i> ИНВЕСТИРОВАТЬ
+            </button>
+        </div>
+    `;
+
+    const investInput = document.getElementById('invest-amount-detail');
+    const sharesSpan = document.getElementById('invest-shares-detail');
+    const balanceInfo = document.getElementById('invest-balance-info-detail');
+    const investBtn = document.getElementById('btn-invest-detail');
+
+    if (investInput) {
+        investInput.max = platform.balance;
+
+        const updateInvestDetail = () => {
+            const amount = parseFloat(investInput.value) || 0;
+            const shares = Math.floor(amount / 1000);
+            sharesSpan.innerText = shares;
+
+            if (amount > platform.balance) {
+                balanceInfo.innerHTML = `Недостаточно средств! Доступно: ${platform.balance.toLocaleString()} SKY`;
+                balanceInfo.style.color = 'var(--accent)';
+                investBtn.disabled = true;
+                investBtn.style.opacity = 0.5;
+            } else {
+                balanceInfo.innerHTML = `Доступно: ${platform.balance.toLocaleString()} SKY`;
+                balanceInfo.style.color = 'var(--warning)';
+                investBtn.disabled = false;
+                investBtn.style.opacity = 1;
+            }
+        };
+
+        investInput.addEventListener('input', updateInvestDetail);
+        updateInvestDetail();
+
+        investBtn.addEventListener('click', function () {
+            const amount = parseFloat(investInput.value);
+            if (amount && amount > 0) {
+                investInProject(projectId, amount);
+            }
+        });
+    }
+
+    modal.style.display = 'flex';
 }
 
-// === ИНИЦИАЛИЗАЦИЯ ИНТЕРФЕЙСА ===
+// ================== ИНИЦИАЛИЗАЦИЯ UI ==================
 function initUI() {
     console.log("Инициализация интерфейса...");
-    
     updateBalanceDisplay();
     updateCryptoPricesDisplay();
-    updateConnectionStatus();
     updatePortfolioDisplay();
     updateOrderBook();
     updateDealsList();
     updateNotifications();
     updateProjectStats();
     initWheelGame();
-    
+    createPartialDealModal();
+
     // Навигация
-    const navItems = document.querySelectorAll('.bottom-nav-item');
-    navItems.forEach(item => {
-        item.addEventListener('click', function(e) {
+    document.querySelectorAll('.bottom-nav-item').forEach(item => {
+        item.addEventListener('click', function (e) {
             e.preventDefault();
             const section = this.getAttribute('data-section');
             showSection(section);
-            
-            navItems.forEach(nav => nav.classList.remove('active'));
+            document.querySelectorAll('.bottom-nav-item').forEach(nav => nav.classList.remove('active'));
             this.classList.add('active');
         });
     });
-    
-    // Кнопка пополнения
-    const depositBtn = document.getElementById('btn-deposit');
-    if (depositBtn) {
-        depositBtn.addEventListener('click', openDepositModal);
-    }
-    
-    // Кнопка уведомлений
-    const notificationBtn = document.getElementById('notification-btn');
-    if (notificationBtn) {
-        notificationBtn.addEventListener('click', function() {
-            const modal = document.getElementById('notification-modal');
-            if (modal) modal.style.display = 'flex';
-        });
-    }
-    
-    // Закрытие модалок
-    const closeButtons = document.querySelectorAll('.close-modal');
-    closeButtons.forEach(btn => {
-        btn.addEventListener('click', function() {
-            const modal = this.closest('.modal');
-            if (modal) modal.style.display = 'none';
+
+    // Кнопки
+    document.getElementById('btn-deposit')?.addEventListener('click', openDepositModal);
+    document.getElementById('notification-btn')?.addEventListener('click', () => {
+        const modal = document.getElementById('notification-modal');
+        if (modal) modal.style.display = 'flex';
+    });
+
+    document.querySelectorAll('.close-modal').forEach(btn => {
+        btn.addEventListener('click', function () {
+            this.closest('.modal').style.display = 'none';
         });
     });
-    
-    window.addEventListener('click', function(e) {
-        const modals = document.querySelectorAll('.modal');
-        modals.forEach(modal => {
-            if (e.target === modal) {
-                modal.style.display = 'none';
-            }
-        });
+
+    window.addEventListener('click', function (e) {
+        if (e.target.classList.contains('modal')) {
+            e.target.style.display = 'none';
+        }
     });
-    
-    // Инициализация всех кнопок
+
     initActionButtons();
     initExchangeListeners();
     initMarketListeners();
     initWithdrawListeners();
 
-    // Слушатель для поля ввода суммы пополнения
-    const depositInput = document.getElementById('deposit-usd');
-    if (depositInput) {
-        depositInput.addEventListener('input', updateDepositReceive);
-    }
-
-    // Кнопка инвестировать (в модалке)
-    const investBtn = document.getElementById('btn-invest');
-    if (investBtn) {
-        investBtn.addEventListener('click', function() {
-            const amount = parseFloat(document.getElementById('invest-amount').value);
-            if (amount && amount > 0) {
-                investInProject('millennium-tower', amount);
-                document.getElementById('invest-modal').style.display = 'none';
-                document.getElementById('invest-amount').value = '';
-            }
-        });
-    }
-
-    // Кнопка помощи
-    const helpBtn = document.querySelector('.help-btn');
-    if (helpBtn) {
-        helpBtn.addEventListener('click', showHelp);
-    }
-    
-    console.log("Интерфейс инициализирован");
+    document.getElementById('deposit-usd')?.addEventListener('input', updateDepositReceive);
+    document.getElementById('btn-invest-now')?.addEventListener('click', () => {
+        showSection('projects');
+        showFullProjectDetail('millennium-tower');
+    });
+    document.querySelector('.help-btn')?.addEventListener('click', showHelp);
 }
 
-// Обновление поля "Вы получите" в модалке пополнения
-function updateDepositReceive() {
-    const amountUSD = parseFloat(document.getElementById('deposit-usd').value) || 0;
-    const skyAmount = Math.floor(amountUSD * USD_TO_SKY);
-    document.getElementById('deposit-receive').innerText = skyAmount.toLocaleString() + ' SKY';
-}
-
-// === ИНИЦИАЛИЗАЦИЯ КНОПОК ===
+// ================== КНОПКИ ДЕЙСТВИЙ ==================
 function initActionButtons() {
-    // Кнопки в модалках
-    const depositSubmitBtn = document.getElementById('btn-process-deposit');
-    if (depositSubmitBtn) {
-        depositSubmitBtn.addEventListener('click', function() {
-            const amountInput = document.getElementById('deposit-usd');
-            if (amountInput && amountInput.value) {
-                const amount = parseFloat(amountInput.value);
-                if (amount > 0) {
-                    processDeposit(amount);
-                    document.getElementById('deposit-modal').style.display = 'none';
-                    amountInput.value = '';
-                    updateDepositReceive();
-                }
+    document.getElementById('btn-process-deposit')?.addEventListener('click', function () {
+        const amountInput = document.getElementById('deposit-usd');
+        if (amountInput && amountInput.value) {
+            const amount = parseFloat(amountInput.value);
+            if (amount > 0) {
+                processDeposit(amount);
+                document.getElementById('deposit-modal').style.display = 'none';
+                amountInput.value = '';
+                updateDepositReceive();
             }
-        });
-    }
+        }
+    });
 
-    const withdrawSubmitBtn = document.getElementById('btn-withdraw');
-    if (withdrawSubmitBtn) {
-        withdrawSubmitBtn.addEventListener('click', function() {
-            const amountInput = document.getElementById('withdraw-amount');
-            const methodSelect = document.getElementById('withdraw-method');
-            const details = {};
+    document.getElementById('btn-withdraw')?.addEventListener('click', function () {
+        const amountInput = document.getElementById('withdraw-amount');
+        const methodSelect = document.getElementById('withdraw-method');
+        const details = {};
 
-            if (amountInput && amountInput.value) {
-                const amount = parseFloat(amountInput.value);
-                const method = methodSelect ? methodSelect.value : 'crypto';
+        if (amountInput && amountInput.value) {
+            const amount = parseFloat(amountInput.value);
+            const method = methodSelect ? methodSelect.value : 'crypto';
 
-                if (amount > 0) {
-                    processWithdraw(amount, method, details);
-                    document.getElementById('withdraw-modal').style.display = 'none';
-                    amountInput.value = '';
-                }
+            if (amount > 0) {
+                processWithdraw(amount, method, details);
+                document.getElementById('withdraw-modal').style.display = 'none';
+                amountInput.value = '';
             }
-        });
-    }
+        }
+    });
 
-    const clearNotificationsBtn = document.getElementById('btn-clear-all-notifications');
-    if (clearNotificationsBtn) {
-        clearNotificationsBtn.addEventListener('click', function() {
-            if (firebaseInitialized && notificationsRef && currentUser) {
-                notificationsRef.where('userId', '==', currentUser.uid).get().then(snapshot => {
-                    snapshot.forEach(doc => doc.ref.delete());
-                });
-            } else {
-                platform.notifications = [];
-                updateNotifications();
-                updateNotificationBadge(0);
-            }
-            showNotification("Все уведомления очищены", "info");
-        });
-    }
+    document.getElementById('btn-clear-all-notifications')?.addEventListener('click', function () {
+        if (firebaseInitialized && notificationsRef && currentUser) {
+            notificationsRef.where('userId', '==', currentUser.uid).get().then(snapshot => {
+                snapshot.forEach(doc => doc.ref.delete());
+            });
+        } else {
+            platform.notifications = [];
+            updateNotifications();
+            updateNotificationBadge(0);
+        }
+        showNotification("Все уведомления очищены", "info");
+    });
 
-    const buyBtn = document.getElementById('btn-buy');
-    if (buyBtn) {
-        buyBtn.addEventListener('click', function() {
-            const coin = platform.tempData.selectedCoin;
-            const amount = parseFloat(document.getElementById('buy-amount').value);
-            buyToken(coin, amount);
-        });
-    }
+    document.getElementById('btn-buy')?.addEventListener('click', function () {
+        const coin = platform.tempData.selectedCoin;
+        const amount = parseFloat(document.getElementById('buy-amount').value);
+        buyToken(coin, amount);
+    });
 
-    const sellBtn = document.getElementById('btn-sell');
-    if (sellBtn) {
-        sellBtn.addEventListener('click', function() {
-            const coin = platform.tempData.selectedCoin;
-            const amount = parseFloat(document.getElementById('sell-amount').value);
-            sellToken(coin, amount);
-        });
-    }
+    document.getElementById('btn-sell')?.addEventListener('click', function () {
+        const coin = platform.tempData.selectedCoin;
+        const amount = parseFloat(document.getElementById('sell-amount').value);
+        sellToken(coin, amount);
+    });
 
-    const createDealBtn = document.getElementById('btn-create-deal');
-    if (createDealBtn) {
-        createDealBtn.addEventListener('click', createDeal);
-    }
-
-    const searchDealsBtn = document.getElementById('btn-search-deals');
-    if (searchDealsBtn) {
-        searchDealsBtn.addEventListener('click', filterDeals);
-    }
-
-    const watchAdBtn = document.getElementById('btn-watch-random-ad');
-    if (watchAdBtn) {
-        watchAdBtn.addEventListener('click', watchAd);
-    }
-
-    // Кнопка открытия модалки инвестирования (на главной)
-    const investNowBtn = document.getElementById('btn-invest-now');
-    if (investNowBtn) {
-        investNowBtn.addEventListener('click', function() {
-            document.getElementById('invest-modal').style.display = 'flex';
-        });
-    }
+    document.getElementById('btn-create-deal')?.addEventListener('click', createDeal);
+    document.getElementById('btn-search-deals')?.addEventListener('click', filterDeals);
+    document.getElementById('btn-watch-random-ad')?.addEventListener('click', watchAd);
 }
 
-// === СЛУШАТЕЛИ ДЛЯ БИРЖИ ===
+// ================== БИРЖА ==================
 function initExchangeListeners() {
-    const cryptoCards = document.querySelectorAll('.crypto-card');
-    cryptoCards.forEach(card => {
-        card.addEventListener('click', function() {
+    document.querySelectorAll('.crypto-card').forEach(card => {
+        card.addEventListener('click', function () {
             const coin = this.getAttribute('data-coin');
             if (coin) {
                 platform.tempData.selectedCoin = coin;
-                cryptoCards.forEach(c => c.classList.remove('selected'));
+                document.querySelectorAll('.crypto-card').forEach(c => c.classList.remove('selected'));
                 this.classList.add('selected');
                 updateExchangeFields(coin);
             }
         });
     });
 
-    const buyAmount = document.getElementById('buy-amount');
-    if (buyAmount) {
-        buyAmount.addEventListener('input', updateBuyCost);
-    }
-
-    const sellAmount = document.getElementById('sell-amount');
-    if (sellAmount) {
-        sellAmount.addEventListener('input', updateSellRevenue);
-    }
+    document.getElementById('buy-amount')?.addEventListener('input', updateBuyCost);
+    document.getElementById('sell-amount')?.addEventListener('input', updateSellRevenue);
 }
 
 function updateExchangeFields(coin) {
     const price = platform.cryptoPrices[coin] || 0;
-    document.getElementById('buy-price-display').innerText = price + ' SKY';
-    document.getElementById('buy-price').value = price;
-    document.getElementById('sell-price-display').innerText = price + ' SKY';
-    document.getElementById('sell-price').value = price;
-    document.getElementById('buy-coin-name').innerText = coin.toUpperCase();
-    document.getElementById('sell-coin-name').innerText = coin.toUpperCase();
+    const buyPriceDisplay = document.getElementById('buy-price-display');
+    const buyPrice = document.getElementById('buy-price');
+    const sellPriceDisplay = document.getElementById('sell-price-display');
+    const sellPrice = document.getElementById('sell-price');
+    const buyCoinName = document.getElementById('buy-coin-name');
+    const sellCoinName = document.getElementById('sell-coin-name');
+
+    if (buyPriceDisplay) buyPriceDisplay.innerText = price + ' SKY';
+    if (buyPrice) buyPrice.value = price;
+    if (sellPriceDisplay) sellPriceDisplay.innerText = price + ' SKY';
+    if (sellPrice) sellPrice.value = price;
+    if (buyCoinName) buyCoinName.innerText = coin.toUpperCase();
+    if (sellCoinName) sellCoinName.innerText = coin.toUpperCase();
 
     updateBuyCost();
     updateSellRevenue();
 }
 
 function updateBuyCost() {
-    const amount = parseFloat(document.getElementById('buy-amount').value) || 0;
-    const price = parseFloat(document.getElementById('buy-price').value) || 0;
+    const amount = parseFloat(document.getElementById('buy-amount')?.value) || 0;
+    const price = parseFloat(document.getElementById('buy-price')?.value) || 0;
     const cost = amount * price;
     const fee = cost * 0.005;
     const total = cost + fee;
-    document.getElementById('buy-cost').innerText = total.toFixed(2) + ' SKY';
-    document.getElementById('buy-fee').innerText = fee.toFixed(2) + ' SKY';
+    const buyCostEl = document.getElementById('buy-cost');
+    const buyFeeEl = document.getElementById('buy-fee');
+    if (buyCostEl) buyCostEl.innerText = total.toFixed(2) + ' SKY';
+    if (buyFeeEl) buyFeeEl.innerText = fee.toFixed(2) + ' SKY';
 }
 
 function updateSellRevenue() {
-    const amount = parseFloat(document.getElementById('sell-amount').value) || 0;
-    const price = parseFloat(document.getElementById('sell-price').value) || 0;
+    const amount = parseFloat(document.getElementById('sell-amount')?.value) || 0;
+    const price = parseFloat(document.getElementById('sell-price')?.value) || 0;
     const revenue = amount * price;
     const fee = revenue * 0.005;
     const total = revenue - fee;
-    document.getElementById('sell-revenue').innerText = total.toFixed(2) + ' SKY';
-    document.getElementById('sell-fee').innerText = fee.toFixed(2) + ' SKY';
+    const sellRevenueEl = document.getElementById('sell-revenue');
+    const sellFeeEl = document.getElementById('sell-fee');
+    if (sellRevenueEl) sellRevenueEl.innerText = total.toFixed(2) + ' SKY';
+    if (sellFeeEl) sellFeeEl.innerText = fee.toFixed(2) + ' SKY';
 }
 
-// === СЛУШАТЕЛИ ДЛЯ РЫНКА (СДЕЛКИ) ===
+// ================== РЫНОК (СДЕЛКИ) ==================
 function initMarketListeners() {
-    const dealType = document.getElementById('deal-type');
-    const dealAsset = document.getElementById('deal-asset');
-    const dealQuantity = document.getElementById('deal-quantity');
-    const dealPrice = document.getElementById('deal-price');
+    document.getElementById('deal-type')?.addEventListener('change', updateDealSummary);
+    document.getElementById('deal-asset')?.addEventListener('change', updateDealSummary);
+    document.getElementById('deal-quantity')?.addEventListener('input', updateDealSummary);
+    document.getElementById('deal-price')?.addEventListener('input', updateDealSummary);
 
-    if (dealType) dealType.addEventListener('change', updateDealSummary);
-    if (dealAsset) dealAsset.addEventListener('change', updateDealSummary);
-    if (dealQuantity) dealQuantity.addEventListener('input', updateDealSummary);
-    if (dealPrice) dealPrice.addEventListener('input', updateDealSummary);
-
-    const filterType = document.getElementById('filter-type');
-    const filterAsset = document.getElementById('filter-asset');
-    const filterMaxPrice = document.getElementById('filter-max-price');
-
-    if (filterType) filterType.addEventListener('change', filterDeals);
-    if (filterAsset) filterAsset.addEventListener('change', filterDeals);
-    if (filterMaxPrice) filterMaxPrice.addEventListener('input', filterDeals);
+    document.getElementById('filter-type')?.addEventListener('change', filterDeals);
+    document.getElementById('filter-asset')?.addEventListener('change', filterDeals);
+    document.getElementById('filter-max-price')?.addEventListener('input', filterDeals);
 }
 
 function updateDealSummary() {
-    const type = document.getElementById('deal-type').value;
+    const type = document.getElementById('deal-type')?.value || 'sell';
     const assetSelect = document.getElementById('deal-asset');
-    const assetText = assetSelect.options[assetSelect.selectedIndex].text;
-    const quantity = parseFloat(document.getElementById('deal-quantity').value) || 0;
-    const price = parseFloat(document.getElementById('deal-price').value) || 0;
+    const assetText = assetSelect?.options[assetSelect.selectedIndex]?.text || '';
+    const quantity = parseFloat(document.getElementById('deal-quantity')?.value) || 0;
+    const price = parseFloat(document.getElementById('deal-price')?.value) || 0;
     const total = quantity * price;
 
-    document.getElementById('deal-summary-type').innerText = type === 'sell' ? 'Продажа' : 'Покупка';
-    document.getElementById('deal-summary-asset').innerText = assetText;
-    document.getElementById('deal-summary-quantity').innerText = quantity + ' шт.';
-    document.getElementById('deal-summary-price').innerText = price + ' SKY';
-    document.getElementById('deal-summary-total').innerText = total.toFixed(2) + ' SKY';
+    const summaryType = document.getElementById('deal-summary-type');
+    const summaryAsset = document.getElementById('deal-summary-asset');
+    const summaryQuantity = document.getElementById('deal-summary-quantity');
+    const summaryPrice = document.getElementById('deal-summary-price');
+    const summaryTotal = document.getElementById('deal-summary-total');
+
+    if (summaryType) summaryType.innerText = type === 'sell' ? 'Продажа' : 'Покупка';
+    if (summaryAsset) summaryAsset.innerText = assetText;
+    if (summaryQuantity) summaryQuantity.innerText = quantity + ' шт.';
+    if (summaryPrice) summaryPrice.innerText = price + ' SKY';
+    if (summaryTotal) summaryTotal.innerText = total.toFixed(2) + ' SKY';
 }
 
 function createDeal() {
-    const type = document.getElementById('deal-type').value;
-    const asset = document.getElementById('deal-asset').value;
-    const quantity = parseFloat(document.getElementById('deal-quantity').value);
-    const price = parseFloat(document.getElementById('deal-price').value);
-    const partial = document.getElementById('deal-partial').value === 'yes';
-    const description = document.getElementById('deal-description').value;
+    const type = document.getElementById('deal-type')?.value;
+    const asset = document.getElementById('deal-asset')?.value;
+    const quantity = parseFloat(document.getElementById('deal-quantity')?.value);
+    const price = parseFloat(document.getElementById('deal-price')?.value);
+    const partial = document.getElementById('deal-partial')?.value === 'yes';
+    const description = document.getElementById('deal-description')?.value;
 
     if (!quantity || quantity <= 0 || !price || price <= 0) {
         showError("Заполните количество и цену");
@@ -1058,16 +1197,19 @@ function createDeal() {
     }
 
     showSuccess("Сделка создана");
-    document.getElementById('deal-quantity').value = 1;
-    document.getElementById('deal-price').value = 1;
-    document.getElementById('deal-description').value = '';
+    const quantityInput = document.getElementById('deal-quantity');
+    const priceInput = document.getElementById('deal-price');
+    const descInput = document.getElementById('deal-description');
+    if (quantityInput) quantityInput.value = 1;
+    if (priceInput) priceInput.value = 1;
+    if (descInput) descInput.value = '';
     updateDealSummary();
 }
 
 function filterDeals() {
-    const type = document.getElementById('filter-type').value;
-    const asset = document.getElementById('filter-asset').value;
-    const maxPrice = parseFloat(document.getElementById('filter-max-price').value) || Infinity;
+    const type = document.getElementById('filter-type')?.value;
+    const asset = document.getElementById('filter-asset')?.value;
+    const maxPrice = parseFloat(document.getElementById('filter-max-price')?.value) || Infinity;
 
     const filtered = platform.deals.filter(deal => {
         if (type !== 'all' && deal.type !== type) return false;
@@ -1090,8 +1232,9 @@ function displayFilteredDeals(deals) {
 
     let html = '';
     deals.forEach(deal => {
+        const isMyDeal = (currentUser && deal.userId === currentUser.uid) || (!currentUser && deal.userId === 'guest');
         html += `
-            <div class="deal-item">
+            <div class="deal-item" data-deal-id="${deal.id}">
                 <div class="deal-header">
                     <span class="deal-type ${deal.type === 'buy' ? 'deal-type-buy' : 'deal-type-sell'}">${deal.type === 'buy' ? 'Покупка' : 'Продажа'}</span>
                     <span class="deal-asset">${deal.asset}</span>
@@ -1110,23 +1253,63 @@ function displayFilteredDeals(deals) {
                         <div class="deal-info-value">${deal.userName}</div>
                     </div>
                 </div>
-                <button class="btn btn-primary deal-action" onclick="handleDealAction('${deal.id}')">${deal.type === 'buy' ? 'Продать' : 'Купить'}</button>
+                <div class="deal-actions">
+                    <button class="btn btn-primary deal-action" onclick="handleDealAction('${deal.id}')">${deal.type === 'buy' ? 'Продать' : 'Купить'}</button>
+                    ${isMyDeal ? `<button class="btn btn-danger deal-delete" onclick="deleteDeal('${deal.id}')"><i class="fas fa-trash"></i> Удалить</button>` : ''}
+                </div>
             </div>
         `;
     });
     container.innerHTML = html;
 }
 
+function deleteDeal(dealId) {
+    if (!confirm("Вы уверены, что хотите удалить эту сделку?")) return;
+
+    const index = platform.deals.findIndex(d => d.id === dealId);
+    if (index !== -1) {
+        const deal = platform.deals[index];
+        const isOwner = (currentUser && deal.userId === currentUser.uid) || (!currentUser && deal.userId === 'guest');
+        if (!isOwner) {
+            showError("Вы не можете удалить чужую сделку");
+            return;
+        }
+
+        platform.deals.splice(index, 1);
+        updateDealsList();
+
+        if (firebaseInitialized && dealsRef) {
+            dealsRef.doc(dealId).delete().catch(err => console.warn("Ошибка удаления сделки из Firebase:", err));
+        }
+
+        showSuccess("Сделка удалена");
+    }
+}
+
 function handleDealAction(dealId) {
     const deal = platform.deals.find(d => d.id === dealId);
     if (!deal) return;
 
-    if (deal.type === 'sell') {
-        if (deal.userId === (currentUser ? currentUser.uid : 'guest')) {
-            showError("Нельзя купить собственную сделку");
-            return;
-        }
+    const isOwner = (currentUser && deal.userId === currentUser.uid) || (!currentUser && deal.userId === 'guest');
+    if (deal.type === 'sell' && isOwner) {
+        showError("Нельзя купить собственную сделку");
+        return;
+    }
+    if (deal.type === 'buy' && isOwner) {
+        showError("Нельзя продать собственную сделку");
+        return;
+    }
 
+    if (deal.partial) {
+        platform.tempData.partialDeal = deal;
+        openPartialDealModal(deal);
+    } else {
+        executeDealFully(deal);
+    }
+}
+
+function executeDealFully(deal) {
+    if (deal.type === 'sell') {
         const totalPrice = deal.quantity * deal.price;
         if (totalPrice > platform.balance) {
             showError("Недостаточно средств");
@@ -1141,7 +1324,7 @@ function handleDealAction(dealId) {
             platform.portfolio[deal.asset] = (platform.portfolio[deal.asset] || 0) + deal.quantity;
         }
 
-        platform.deals = platform.deals.filter(d => d.id !== dealId);
+        platform.deals = platform.deals.filter(d => d.id !== deal.id);
         updateDealsList();
         updateBalanceDisplay();
         updatePortfolioDisplay();
@@ -1165,16 +1348,154 @@ function handleDealAction(dealId) {
         const totalPrice = deal.quantity * deal.price;
         platform.balance += totalPrice;
 
-        platform.deals = platform.deals.filter(d => d.id !== dealId);
+        platform.deals = platform.deals.filter(d => d.id !== deal.id);
         updateDealsList();
         updateBalanceDisplay();
         updatePortfolioDisplay();
 
         showSuccess("Сделка выполнена");
     }
+
+    if (firebaseInitialized && currentUser && usersRef) {
+        usersRef.doc(currentUser.uid).update({
+            balance: platform.balance,
+            portfolio: platform.portfolio,
+            projectShares: platform.userData.projectShares
+        }).catch(err => console.warn("Ошибка синхронизации после сделки:", err));
+
+        if (dealsRef) {
+            dealsRef.doc(deal.id).delete().catch(err => console.warn("Ошибка удаления сделки из Firebase:", err));
+        }
+    }
 }
 
-// === СЛУШАТЕЛИ ДЛЯ ВЫВОДА ===
+function createPartialDealModal() {
+    if (document.getElementById('partial-deal-modal')) return;
+
+    const modal = document.createElement('div');
+    modal.id = 'partial-deal-modal';
+    modal.className = 'modal';
+    modal.innerHTML = `
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 style="color: var(--secondary);"><i class="fas fa-cut"></i> ЧАСТИЧНАЯ СДЕЛКА</h3>
+                <button class="close-modal" onclick="document.getElementById('partial-deal-modal').style.display='none'">&times;</button>
+            </div>
+            <div style="padding: 15px;">
+                <p id="partial-deal-info"></p>
+                <div class="form-group">
+                    <label>Количество (<span id="partial-max-quantity"></span>):</label>
+                    <input type="number" id="partial-quantity" min="1" step="1" value="1">
+                </div>
+                <div style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 12px; margin: 15px 0;">
+                    <p>Сумма сделки: <span id="partial-total"></span> SKY</p>
+                </div>
+                <button class="btn btn-success btn-block" id="btn-execute-partial">ПОДТВЕРДИТЬ</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(modal);
+
+    document.getElementById('btn-execute-partial').addEventListener('click', () => {
+        const deal = platform.tempData.partialDeal;
+        if (!deal) return;
+
+        const quantity = parseInt(document.getElementById('partial-quantity').value);
+        if (quantity <= 0 || quantity > deal.quantity) {
+            showError(`Количество должно быть от 1 до ${deal.quantity}`);
+            return;
+        }
+
+        executePartialDeal(deal, quantity);
+    });
+}
+
+function openPartialDealModal(deal) {
+    platform.tempData.partialDeal = deal;
+    const modal = document.getElementById('partial-deal-modal');
+    if (!modal) createPartialDealModal();
+
+    document.getElementById('partial-deal-info').innerText = `${deal.type === 'sell' ? 'Покупка' : 'Продажа'} ${deal.asset} по цене ${deal.price} SKY за шт.`;
+    document.getElementById('partial-max-quantity').innerText = `макс. ${deal.quantity}`;
+    const quantInput = document.getElementById('partial-quantity');
+    quantInput.max = deal.quantity;
+    quantInput.value = 1;
+    updatePartialTotal();
+
+    quantInput.addEventListener('input', updatePartialTotal);
+    modal.style.display = 'flex';
+}
+
+function updatePartialTotal() {
+    const deal = platform.tempData.partialDeal;
+    if (!deal) return;
+    const quantity = parseInt(document.getElementById('partial-quantity')?.value) || 0;
+    const totalEl = document.getElementById('partial-total');
+    if (totalEl) totalEl.innerText = (quantity * deal.price).toFixed(2);
+}
+
+function executePartialDeal(deal, quantity) {
+    const totalPrice = quantity * deal.price;
+
+    if (deal.type === 'sell') {
+        if (totalPrice > platform.balance) {
+            showError("Недостаточно средств");
+            return;
+        }
+
+        platform.balance -= totalPrice;
+        if (deal.asset.startsWith('millennium')) {
+            platform.userData.projectShares['millennium-tower'] = (platform.userData.projectShares['millennium-tower'] || 0) + quantity;
+        } else {
+            platform.portfolio[deal.asset] = (platform.portfolio[deal.asset] || 0) + quantity;
+        }
+    } else {
+        if (deal.asset.startsWith('millennium')) {
+            if ((platform.userData.projectShares?.['millennium-tower'] || 0) < quantity) {
+                showError("У вас недостаточно долей");
+                return;
+            }
+            platform.userData.projectShares['millennium-tower'] -= quantity;
+        } else {
+            if ((platform.portfolio[deal.asset] || 0) < quantity) {
+                showError("У вас недостаточно токенов");
+                return;
+            }
+            platform.portfolio[deal.asset] -= quantity;
+        }
+
+        platform.balance += totalPrice;
+    }
+
+    if (quantity === deal.quantity) {
+        platform.deals = platform.deals.filter(d => d.id !== deal.id);
+        if (firebaseInitialized && dealsRef) {
+            dealsRef.doc(deal.id).delete().catch(err => console.warn("Ошибка удаления сделки из Firebase:", err));
+        }
+    } else {
+        deal.quantity -= quantity;
+        if (firebaseInitialized && dealsRef) {
+            dealsRef.doc(deal.id).update({ quantity: deal.quantity }).catch(err => console.warn("Ошибка обновления сделки в Firebase:", err));
+        }
+    }
+
+    updateDealsList();
+    updateBalanceDisplay();
+    updatePortfolioDisplay();
+
+    if (firebaseInitialized && currentUser && usersRef) {
+        usersRef.doc(currentUser.uid).update({
+            balance: platform.balance,
+            portfolio: platform.portfolio,
+            projectShares: platform.userData.projectShares
+        }).catch(err => console.warn("Ошибка синхронизации после частичной сделки:", err));
+    }
+
+    document.getElementById('partial-deal-modal').style.display = 'none';
+    showSuccess("Частичная сделка выполнена");
+}
+
+// ================== ВЫВОД СРЕДСТВ ==================
 function initWithdrawListeners() {
     const methodSelect = document.getElementById('withdraw-method');
     const cryptoDetails = document.getElementById('crypto-details');
@@ -1182,7 +1503,7 @@ function initWithdrawListeners() {
     const amountInput = document.getElementById('withdraw-amount');
 
     if (methodSelect) {
-        methodSelect.addEventListener('change', function() {
+        methodSelect.addEventListener('change', function () {
             const val = this.value;
             if (cryptoDetails) cryptoDetails.style.display = val === 'crypto' ? 'block' : 'none';
             if (cardDetails) cardDetails.style.display = (val === 'bank' || val === 'yoomoney' || val === 'qiwi') ? 'block' : 'none';
@@ -1193,15 +1514,12 @@ function initWithdrawListeners() {
         amountInput.addEventListener('input', updateWithdrawSummary);
     }
 
-    const networkSelect = document.getElementById('crypto-network');
-    if (networkSelect) {
-        networkSelect.addEventListener('change', updateWithdrawSummary);
-    }
+    document.getElementById('crypto-network')?.addEventListener('change', updateWithdrawSummary);
 }
 
 function updateWithdrawSummary() {
-    const amount = parseFloat(document.getElementById('withdraw-amount').value) || 0;
-    const method = document.getElementById('withdraw-method').value;
+    const amount = parseFloat(document.getElementById('withdraw-amount')?.value) || 0;
+    const method = document.getElementById('withdraw-method')?.value || 'crypto';
     const network = document.getElementById('crypto-network')?.value || 'trc20';
 
     let networkFeePercent = 0.02;
@@ -1213,16 +1531,25 @@ function updateWithdrawSummary() {
     const feeNetwork = amount * networkFeePercent;
     const total = amount - feePlatform - feeNetwork;
 
-    document.getElementById('withdraw-summary-amount').innerText = amount.toFixed(2);
-    document.getElementById('withdraw-usd').innerText = (amount * SKY_TO_USD).toFixed(2);
-    document.getElementById('withdraw-fee-platform').innerText = feePlatform.toFixed(2) + ' SKY';
-    document.getElementById('withdraw-fee-network').innerText = feeNetwork.toFixed(2) + ' SKY';
-    document.getElementById('withdraw-total').innerText = total.toFixed(2);
-    document.getElementById('withdraw-total-usd').innerText = (total * SKY_TO_USD).toFixed(2);
+    const summaryAmount = document.getElementById('withdraw-summary-amount');
+    const withdrawUsd = document.getElementById('withdraw-usd');
+    const feePlatformEl = document.getElementById('withdraw-fee-platform');
+    const feeNetworkEl = document.getElementById('withdraw-fee-network');
+    const totalEl = document.getElementById('withdraw-total');
+    const totalUsdEl = document.getElementById('withdraw-total-usd');
+
+    if (summaryAmount) summaryAmount.innerText = amount.toFixed(2);
+    if (withdrawUsd) withdrawUsd.innerText = (amount * SKY_TO_USD).toFixed(2);
+    if (feePlatformEl) feePlatformEl.innerText = feePlatform.toFixed(2) + ' SKY';
+    if (feeNetworkEl) feeNetworkEl.innerText = feeNetwork.toFixed(2) + ' SKY';
+    if (totalEl) totalEl.innerText = total.toFixed(2);
+    if (totalUsdEl) totalUsdEl.innerText = (total * SKY_TO_USD).toFixed(2);
 }
 
-// === ПРОСМОТР РЕКЛАМЫ (ИСПРАВЛЕНО) ===
+// ================== РЕКЛАМА ==================
 function watchAd() {
+    checkAndResetAdCounter();
+
     let watched = parseInt(localStorage.getItem('ads_watched_today') || '0');
     if (watched >= 50) {
         showError("Вы достигли лимита просмотров на сегодня (50)");
@@ -1243,19 +1570,21 @@ function watchAd() {
 
     watched++;
     localStorage.setItem('ads_watched_today', watched);
-    
-    // Обновление статистики на странице
+
     const totalEarnedToday = watched * 3;
     let totalEarnedAll = parseInt(localStorage.getItem('total_earned') || '0') + 3;
     localStorage.setItem('total_earned', totalEarnedAll);
 
-    document.getElementById('ads-watched').innerText = watched + '/50';
-    document.getElementById('earned-today').innerText = totalEarnedToday + ' SKY';
-    document.getElementById('total-earned').innerText = totalEarnedAll + ' SKY';
+    const adsWatchedEl = document.getElementById('ads-watched');
+    const earnedTodayEl = document.getElementById('earned-today');
+    const totalEarnedEl = document.getElementById('total-earned');
+    if (adsWatchedEl) adsWatchedEl.innerText = watched + '/50';
+    if (earnedTodayEl) earnedTodayEl.innerText = totalEarnedToday + ' SKY';
+    if (totalEarnedEl) totalEarnedEl.innerText = totalEarnedAll + ' SKY';
 }
 
-// Инициализация статистики рекламы при загрузке
 function initAdStats() {
+    checkAndResetAdCounter();
     const watched = parseInt(localStorage.getItem('ads_watched_today') || '0');
     const totalEarned = parseInt(localStorage.getItem('total_earned') || '0');
     document.getElementById('ads-watched').innerText = watched + '/50';
@@ -1263,81 +1592,17 @@ function initAdStats() {
     document.getElementById('total-earned').innerText = totalEarned + ' SKY';
 }
 
-// === ДЕТАЛИ ПРОЕКТА ===
-function showFullProjectDetail(projectId) {
-    let project = platform.projects[projectId];
-    if (!project) {
-        console.warn("Проект не найден, использую демо-данные");
-        project = {
-            name: 'Башня Тысячелетия',
-            target: 5500000000,
-            raised: 5200000000,
-            yield: 8.3,
-            duration: 15,
-            exitYear: 2035,
-            description: 'Самое высокое здание в мире (1100 м). Офисы, апартаменты, отель.',
-            investors: 24587
-        };
+function checkAndResetAdCounter() {
+    const lastResetDate = localStorage.getItem('ad_last_reset');
+    const today = new Date().toDateString();
+
+    if (lastResetDate !== today) {
+        localStorage.setItem('ad_last_reset', today);
+        localStorage.setItem('ads_watched_today', '0');
     }
-
-    const modal = document.getElementById('project-detail-modal');
-    const content = document.getElementById('project-detail-content');
-
-    const raised = project.raised || 0;
-    const target = project.target || 1;
-    const percent = (raised / target * 100).toFixed(1);
-
-    const userShare = platform.userData.projectShares?.[projectId] || 0;
-    const totalShares = 1000000;
-    const userPercent = (userShare / totalShares * 100).toFixed(2);
-
-    content.innerHTML = `
-        <h4 style="color: var(--secondary); margin-bottom: 15px;">${project.name}</h4>
-        <p style="color: var(--gray); line-height: 1.5; margin-bottom: 20px;">${project.description}</p>
-
-        <div class="project-stats">
-            <div class="stat-box">
-                <div class="stat-label">Собрано</div>
-                <div class="stat-value">$${(raised / 1e6).toFixed(1)}M</div>
-                <div style="color: var(--gray); font-size: 0.85rem;">из $${(target / 1e6).toFixed(1)}M</div>
-            </div>
-            <div class="stat-box">
-                <div class="stat-label">Доходность</div>
-                <div class="stat-value">${project.yield}%</div>
-            </div>
-            <div class="stat-box">
-                <div class="stat-label">Срок</div>
-                <div class="stat-value">${project.duration} лет</div>
-            </div>
-        </div>
-
-        <div class="investment-progress" style="margin: 20px 0;">
-            <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                <span>Прогрес сбора:</span>
-                <span style="color: var(--success);">${percent}%</span>
-            </div>
-            <div style="height: 8px; background: rgba(255,255,255,0.1); border-radius: 4px;">
-                <div style="width: ${percent}%; height: 100%; background: linear-gradient(90deg, var(--secondary), var(--success)); border-radius: 4px;"></div>
-            </div>
-        </div>
-
-        <div class="share-chart-wrapper">
-            <div class="share-chart-info">
-                <h5 style="color: var(--secondary); margin-bottom: 10px;">Ваша доля</h5>
-                <div style="font-size: 1.5rem; color: var(--success);">${userShare.toLocaleString()}</div>
-                <div style="color: var(--gray);">долей (${userPercent}%)</div>
-            </div>
-            <div class="share-sell-note">
-                <h5><i class="fas fa-info-circle"></i> Условия выхода</h5>
-                <p style="font-size: 0.9rem; color: var(--gray);">После 2035 года вы сможете продать долю обратно компании за 125% от стоимости инвестиций. Досрочная продажа доступна на рынке.</p>
-            </div>
-        </div>
-    `;
-
-    modal.style.display = 'flex';
 }
 
-// === КОЛЕСО ВЕЗЕНИЯ ===
+// ================== КОЛЕСО ВЕЗЕНИЯ ==================
 function initWheelGame() {
     startWheelRound();
     drawWheel();
@@ -1397,10 +1662,13 @@ function finishWheelRound() {
 
         showNotification(`Победитель: ${winner.name}! Выигрыш ${prize} SKY`, 'success');
 
-        document.getElementById('casino-total-wins').innerText = (parseInt(document.getElementById('casino-total-wins').innerText) + 1).toString();
-        document.getElementById('casino-total-won').innerText = (parseInt(document.getElementById('casino-total-won').innerText) + prize).toString() + ' SKY';
-        if (prize > parseInt(document.getElementById('casino-biggest-win').innerText)) {
-            document.getElementById('casino-biggest-win').innerText = prize + ' SKY';
+        const totalWinsEl = document.getElementById('casino-total-wins');
+        const totalWonEl = document.getElementById('casino-total-won');
+        const biggestWinEl = document.getElementById('casino-biggest-win');
+        if (totalWinsEl) totalWinsEl.innerText = (parseInt(totalWinsEl.innerText) + 1).toString();
+        if (totalWonEl) totalWonEl.innerText = (parseInt(totalWonEl.innerText) + prize).toString() + ' SKY';
+        if (biggestWinEl && prize > parseInt(biggestWinEl.innerText)) {
+            biggestWinEl.innerText = prize + ' SKY';
         }
 
         startWheelRound();
@@ -1510,7 +1778,8 @@ function closeWheelGame() {
 }
 
 function joinWheelGameModal() {
-    const bet = parseFloat(document.getElementById('wheel-bet-modal').value);
+    const betInput = document.getElementById('wheel-bet-modal');
+    const bet = parseFloat(betInput?.value);
     if (!bet || bet < 10) {
         showError("Минимальная ставка 10 SKY");
         return;
@@ -1550,11 +1819,17 @@ function updateWheelDisplay() {
     const totalBet = platform.tempData.wheelGame.totalBet;
     const prizePool = platform.tempData.wheelGame.prizePool;
 
-    document.getElementById('wheel-players-count-modal').innerText = players.length;
-    document.getElementById('wheel-total-bet-modal').innerText = totalBet;
-    document.getElementById('wheel-prize-modal').innerText = `Призовой фонд: ${Math.floor(prizePool * 0.95)} SKY`;
-
+    const playersCountModal = document.getElementById('wheel-players-count-modal');
+    const totalBetModal = document.getElementById('wheel-total-bet-modal');
+    const prizeModal = document.getElementById('wheel-prize-modal');
     const playersList = document.getElementById('wheel-players-modal');
+    const playersCountPreview = document.getElementById('wheel-players-count-preview');
+
+    if (playersCountModal) playersCountModal.innerText = players.length;
+    if (totalBetModal) totalBetModal.innerText = totalBet;
+    if (prizeModal) prizeModal.innerText = `Призовой фонд: ${Math.floor(prizePool * 0.95)} SKY`;
+    if (playersCountPreview) playersCountPreview.innerText = players.length;
+
     if (playersList) {
         if (players.length === 0) {
             playersList.innerHTML = '<div style="text-align: center; color: var(--gray);">Пока нет игроков</div>';
@@ -1566,18 +1841,22 @@ function updateWheelDisplay() {
             playersList.innerHTML = html;
         }
     }
-
-    document.getElementById('wheel-players-count-preview').innerText = players.length;
 }
 
-// === ПРИБЫЛЬ ПО ПРОЕКТУ ===
+// ================== ПРИБЫЛЬ ==================
 function claimProfit(projectId) {
-    if (platform.pendingProfit > 0) {
-        platform.balance += platform.pendingProfit;
+    const profit = calculateUserProfit(projectId);
+
+    if (profit > 0) {
+        const profitInSKY = profit / SKY_TO_USD;
+        platform.balance += profitInSKY;
         platform.pendingProfit = 0;
+
         updateBalanceDisplay();
-        document.getElementById('my-pending-profit').innerText = '0 SKY';
-        showSuccess("Прибыль получена!");
+        const pendingProfitEl = document.getElementById('my-pending-profit');
+        if (pendingProfitEl) pendingProfitEl.innerText = '0 SKY';
+
+        showSuccess(`Прибыль ${profitInSKY.toFixed(2)} SKY ($${profit.toFixed(2)}) получена!`);
     } else {
         showNotification("Нет доступной прибыли", "info");
     }
@@ -1585,7 +1864,7 @@ function claimProfit(projectId) {
 
 function toggleProfitSection() {
     const content = document.getElementById('profit-content');
-    const btn = document.getElementById('profit-toggle-btn').querySelector('i');
+    const btn = document.querySelector('#profit-toggle-btn i');
     if (content.classList.contains('expanded')) {
         content.classList.remove('expanded');
         content.classList.add('collapsed');
@@ -1599,7 +1878,6 @@ function toggleProfitSection() {
     }
 }
 
-// === ТАЙМЕР ВЫПЛАТЫ ===
 function startPayoutTimer() {
     setInterval(updatePayoutTimer, 1000);
 }
@@ -1609,9 +1887,14 @@ function updatePayoutTimer() {
     const next = new Date(platform.nextPayoutDate);
     const diff = next - now;
     if (diff <= 0) {
-        platform.pendingProfit += 250;
+        const profit = calculateUserProfit('millennium-tower');
+        platform.pendingProfit += profit / SKY_TO_USD;
         platform.nextPayoutDate = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000).toISOString();
         updateProjectStats();
+
+        if (profit > 0) {
+            showNotification(`Начислена прибыль по проекту: $${profit.toFixed(2)}`, 'success');
+        }
     }
     const days = Math.floor(diff / (1000 * 60 * 60 * 24));
     const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
@@ -1625,19 +1908,19 @@ function updatePayoutTimer() {
     if (nextPayoutEl) nextPayoutEl.innerText = timerStr;
 }
 
-// === ОФФЛАЙН РЕЖИМ ===
+// ================== ОФФЛАЙН РЕЖИМ ==================
 function initPlatformOffline() {
     console.log("Запуск в оффлайн режиме");
     hideLoading();
-    
+
     platform.balance = 10000;
     platform.userData = {
         username: "Гость",
         balance: 10000,
-        projectShares: { 'millennium-tower': 10 }
+        projectShares: { 'millennium-tower': 0 }
     };
-    platform.pendingProfit = 250;
-    
+    platform.pendingProfit = 0;
+
     platform.cryptoPrices = getDemoCryptoPrices();
     platform.deals = getDemoDeals();
     platform.orders = getDemoOrders();
@@ -1648,25 +1931,47 @@ function initPlatformOffline() {
         bonk: 10,
         floki: 500
     };
-    
+
     updateBalanceDisplay();
     updateCryptoPricesDisplay();
     updateDealsList();
     updatePortfolioDisplay();
     updateOrderBook();
     updateProjectStats();
-    
+
     initUI();
-    
+
+    startPriceSimulator();
+
     setTimeout(() => {
         showNotification("Вы в оффлайн-режиме. Функции ограничены.", "warning");
     }, 500);
-    
+
     console.log("Оффлайн-режим активирован");
 }
 
-// === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
+let priceSimulatorInterval = null;
 
+function startPriceSimulator() {
+    if (priceSimulatorInterval) clearInterval(priceSimulatorInterval);
+
+    priceSimulatorInterval = setInterval(() => {
+        for (let coin in platform.cryptoPrices) {
+            let oldPrice = platform.cryptoPrices[coin];
+            let change = (Math.random() * 4 - 2) / 100;
+            let newPrice = oldPrice * (1 + change);
+            if (newPrice < 0.01) newPrice = 0.01;
+            platform.cryptoPrices[coin] = newPrice;
+        }
+
+        updateCryptoPricesDisplay();
+        updatePortfolioDisplay();
+        updateExchangeFields(platform.tempData.selectedCoin);
+        animatePriceChange();
+    }, 10000);
+}
+
+// ================== ДЕМО ДАННЫЕ ==================
 function getDemoCryptoPrices() {
     return {
         dogemoon: 125,
@@ -1714,8 +2019,8 @@ function getDemoOrders() {
     ];
 }
 
+// ================== УВЕДОМЛЕНИЯ ==================
 function showNotification(message, type = 'info') {
-    // Простая реализация уведомлений
     const toast = document.createElement('div');
     toast.className = `notification-toast ${type}`;
     toast.innerText = message;
@@ -1731,17 +2036,22 @@ function showError(message) {
     showNotification(message, 'error');
 }
 
-// Новая функция для кнопки помощи
-function showHelp() {
-    alert("Добро пожаловать в CRYPTOVERSE!\n\nБаланс: " + platform.balance + " SKY\n\nЕсли у вас возникли вопросы, обратитесь в поддержку: support@cryptoverse.com");
-}
-
 async function createNotification(userId, title, message, type = 'info') {
     if (!firebaseInitialized || !notificationsRef) {
-        console.log("Оффлайн: уведомление не отправлено", { title, message });
+        const localNotif = {
+            id: 'notif_' + Date.now(),
+            userId: userId,
+            title: title,
+            message: message,
+            type: type,
+            read: false,
+            timestamp: new Date().toISOString()
+        };
+        platform.notifications.unshift(localNotif);
+        updateNotifications();
         return null;
     }
-    
+
     try {
         return await notificationsRef.add({
             userId: userId,
@@ -1757,17 +2067,7 @@ async function createNotification(userId, title, message, type = 'info') {
     }
 }
 
-function setUserOnline(online) {
-    if (currentUser && usersRef) {
-        usersRef.doc(currentUser.uid).update({
-            online: online,
-            lastSeen: firebase.firestore.FieldValue.serverTimestamp()
-        }).catch(error => {
-            console.error("Ошибка обновления статуса онлайн:", error);
-        });
-    }
-}
-
+// ================== ОТОБРАЖЕНИЕ ДАННЫХ ==================
 function updateBalanceDisplay() {
     const balanceEl = document.getElementById('balance');
     const usdEl = document.getElementById('balance-usd');
@@ -1777,21 +2077,6 @@ function updateBalanceDisplay() {
     }
     if (usdEl) {
         usdEl.textContent = (platform.balance * SKY_TO_USD).toFixed(2);
-    }
-}
-
-function updateConnectionStatus() {
-    const statusEl = document.getElementById('connection-status');
-    if (statusEl) {
-        statusEl.textContent = platform.tempData.isOnline ? '🟢 В сети' : '🔴 Офлайн';
-        statusEl.className = platform.tempData.isOnline ? 'online' : 'offline';
-    }
-}
-
-function updateOnlineUsersCount(count) {
-    const countEl = document.getElementById('online-users-count');
-    if (countEl) {
-        countEl.textContent = count.toLocaleString('ru-RU');
     }
 }
 
@@ -1818,143 +2103,104 @@ function updateCryptoPricesDisplay() {
 
 function updateDealsList() {
     const container = document.getElementById('deals-container');
-    if (container) {
-        if (platform.deals.length === 0) {
-            container.innerHTML = '<div class="no-deals">Нет активных сделок</div>';
-            return;
-        }
-        
-        let html = '';
-        platform.deals.forEach(deal => {
-            html += `
-                <div class="deal-item ${deal.type}">
-                    <div class="deal-header">
-                        <span class="deal-type ${deal.type === 'buy' ? 'deal-type-buy' : 'deal-type-sell'}">${deal.type === 'buy' ? 'Покупка' : 'Продажа'}</span>
-                        <span class="deal-asset">${deal.asset}</span>
-                    </div>
-                    <div class="deal-info">
-                        <div>Количество: ${deal.quantity}</div>
-                        <div>Цена: ${deal.price} SKY</div>
-                        <div>Продавец: ${deal.userName}</div>
-                    </div>
-                    <button class="deal-action btn btn-primary" onclick="handleDealAction('${deal.id}')">
-                        ${deal.type === 'buy' ? 'Продать' : 'Купить'}
-                    </button>
-                </div>
-            `;
-        });
-        container.innerHTML = html;
+    if (!container) return;
+
+    if (platform.deals.length === 0) {
+        container.innerHTML = '<div class="no-deals">Нет активных сделок</div>';
+        return;
     }
+
+    let html = '';
+    platform.deals.forEach(deal => {
+        const isMyDeal = (currentUser && deal.userId === currentUser.uid) || (!currentUser && deal.userId === 'guest');
+        html += `
+            <div class="deal-item ${deal.type}">
+                <div class="deal-header">
+                    <span class="deal-type ${deal.type === 'buy' ? 'deal-type-buy' : 'deal-type-sell'}">${deal.type === 'buy' ? 'Покупка' : 'Продажа'}</span>
+                    <span class="deal-asset">${deal.asset}</span>
+                </div>
+                <div class="deal-info">
+                    <div>Количество: ${deal.quantity}</div>
+                    <div>Цена: ${deal.price} SKY</div>
+                    <div>Продавец: ${deal.userName}</div>
+                </div>
+                <div class="deal-actions">
+                    <button class="btn btn-primary deal-action" onclick="handleDealAction('${deal.id}')">${deal.type === 'buy' ? 'Продать' : 'Купить'}</button>
+                    ${isMyDeal ? `<button class="btn btn-danger deal-delete" onclick="deleteDeal('${deal.id}')"><i class="fas fa-trash"></i> Удалить</button>` : ''}
+                </div>
+            </div>
+        `;
+    });
+    container.innerHTML = html;
 }
 
 function updateNotifications() {
-    const container = document.getElementById('notifications-container');
-    if (container) {
-        if (platform.notifications.length === 0) {
-            container.innerHTML = '<div class="no-notifications">Нет уведомлений</div>';
+    const container = document.getElementById('notifications-list');
+    if (!container) return;
+
+    const unreadCount = platform.notifications.filter(n => !n.read).length;
+
+    try {
+        if (!platform.notifications || platform.notifications.length === 0) {
+            container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--gray);">Нет уведомлений</div>';
+            updateNotificationBadge(0);
             return;
         }
-        
+
         let html = '';
         platform.notifications.forEach(notif => {
+            let timeStr = 'Только что';
+            try {
+                if (notif.timestamp) {
+                    if (notif.timestamp.toDate) {
+                        timeStr = formatTime(notif.timestamp.toDate());
+                    } else {
+                        timeStr = formatTime(new Date(notif.timestamp));
+                    }
+                }
+            } catch (e) {}
+
             html += `
-                <div class="notification-item ${notif.type} ${notif.read ? 'read' : 'unread'}">
-                    <div class="notification-title">${notif.title}</div>
-                    <div class="notification-message">${notif.message}</div>
-                    <div class="notification-time">${formatTime(notif.timestamp)}</div>
+                <div class="notification-item ${notif.type || 'info'} ${notif.read ? 'read' : 'unread'}" onclick="markNotificationRead('${notif.id}')">
+                    <div class="notification-title">${notif.title || 'Уведомление'}</div>
+                    <div class="notification-message">${notif.message || ''}</div>
+                    <div class="notification-time">${timeStr}</div>
                 </div>
             `;
         });
+
         container.innerHTML = html;
+    } catch (error) {
+        console.error('Ошибка при отображении уведомлений:', error);
+        container.innerHTML = '<div style="padding: 20px; text-align: center; color: var(--accent);">Ошибка загрузки уведомлений</div>';
+    } finally {
+        updateNotificationBadge(unreadCount);
+    }
+}
+
+function markNotificationRead(notifId) {
+    const notif = platform.notifications.find(n => n.id === notifId);
+    if (notif && !notif.read) {
+        notif.read = true;
+        if (firebaseInitialized && notificationsRef && currentUser) {
+            notificationsRef.doc(notifId).update({ read: true }).catch(err => console.warn("Ошибка обновления уведомления:", err));
+        }
+        updateNotifications();
     }
 }
 
 function updateNotificationBadge(count) {
     const badge = document.getElementById('notification-badge');
     if (badge) {
-        badge.textContent = count > 9 ? '9+' : count;
-        badge.style.display = count > 0 ? 'flex' : 'none';
+        if (count > 0) {
+            badge.textContent = count > 9 ? '9+' : count;
+            badge.style.display = 'flex';
+        } else {
+            badge.style.display = 'none';
+        }
     }
 }
 
-function formatTime(timestamp) {
-    if (!timestamp) return '';
-    
-    const date = timestamp.toDate ? timestamp.toDate() : new Date(timestamp);
-    const now = new Date();
-    const diff = now - date;
-    
-    if (diff < 60000) return 'Только что';
-    if (diff < 3600000) return `${Math.floor(diff / 60000)} мин назад`;
-    if (diff < 86400000) return `${Math.floor(diff / 3600000)} ч назад`;
-    
-    return date.toLocaleDateString('ru-RU');
-}
-
-function showSection(sectionId) {
-    const sections = document.querySelectorAll('.content-section');
-    sections.forEach(section => {
-        section.style.display = 'none';
-        section.classList.remove('active');
-    });
-    
-    const targetSection = document.getElementById(sectionId + '-section');
-    if (targetSection) {
-        targetSection.style.display = 'block';
-        targetSection.classList.add('active');
-    }
-}
-
-function openDepositModal() {
-    const modal = document.getElementById('deposit-modal');
-    if (modal) {
-        modal.style.display = 'flex';
-        updateDepositReceive();
-    }
-}
-
-function animatePriceChange() {
-    const priceElements = document.querySelectorAll('.crypto-price');
-    priceElements.forEach(el => {
-        el.style.transition = 'all 0.5s ease';
-        el.style.transform = 'scale(1.1)';
-        el.style.color = '#e74c3c';
-
-        setTimeout(() => {
-            el.style.transform = 'scale(1)';
-            el.style.color = '';
-        }, 500);
-    });
-}
-
-function showLoading(message = "Загрузка...") {
-    hideLoading();
-    
-    const loadingEl = document.createElement('div');
-    loadingEl.id = 'global-loading';
-    loadingEl.innerHTML = `
-        <div class="loading-overlay">
-            <div class="loading-spinner">
-                <div class="spinner"></div>
-                <div class="loading-text">${message}</div>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(loadingEl);
-}
-
-function hideLoading() {
-    const loadingEl = document.getElementById('global-loading');
-    if (loadingEl) {
-        loadingEl.remove();
-    }
-}
-
-function calculateNetworkFee(method, amount) {
-    return amount * 0.02;
-}
-
-// === ОБНОВЛЕНИЕ ПОРТФЕЛЯ И КНИГИ ОРДЕРОВ ===
 function updatePortfolioDisplay() {
     const container = document.getElementById('portfolio-list');
     if (!container) return;
@@ -1992,8 +2238,8 @@ function updateOrderBook() {
     const container = document.getElementById('order-book');
     if (!container) return;
 
-    const buyOrders = platform.orders.filter(o => o.type === 'buy').sort((a,b) => b.price - a.price);
-    const sellOrders = platform.orders.filter(o => o.type === 'sell').sort((a,b) => a.price - b.price);
+    const buyOrders = platform.orders.filter(o => o.type === 'buy').sort((a, b) => b.price - a.price);
+    const sellOrders = platform.orders.filter(o => o.type === 'sell').sort((a, b) => a.price - b.price);
 
     let html = '<div class="order-row order-row-header"><div>ТИП</div><div>ЦЕНА (SKY)</div><div>ОБЪЕМ</div></div>';
     buyOrders.forEach(o => {
@@ -2006,31 +2252,47 @@ function updateOrderBook() {
 }
 
 function updateProjectStats() {
-    const project = platform.projects['millennium-tower'] || { raised: 5200000000, target: 5500000000 };
+    const project = platform.projects['millennium-tower'] || { raised: 0, target: 5500000000 };
     const raised = project.raised;
     const target = project.target;
     const percent = (raised / target * 100).toFixed(1);
 
-    document.getElementById('total-raised').innerText = (raised / 1e6).toFixed(1) + 'M';
-    document.getElementById('home-raised').innerText = '$' + (raised / 1e6).toFixed(1) + 'M';
-    document.getElementById('home-progress-bar').style.width = percent + '%';
-    document.getElementById('home-progress-text').innerText = percent + '% завершено';
-    document.getElementById('project-raised-display-1').innerText = '$' + (raised / 1e6).toFixed(1) + 'M';
-    document.getElementById('project-progress-value-1').innerText = percent + '%';
+    const totalRaisedEl = document.getElementById('total-raised');
+    const homeRaisedEl = document.getElementById('home-raised');
+    const homeProgressBar = document.getElementById('home-progress-bar');
+    const homeProgressText = document.getElementById('home-progress-text');
+    const projectRaisedDisplay = document.getElementById('project-raised-display-1');
+    const projectProgressValue = document.getElementById('project-progress-value-1');
     const circle = document.getElementById('project-progress-circle-1');
+
+    if (totalRaisedEl) totalRaisedEl.innerText = (raised / 1e6).toFixed(1) + 'M';
+    if (homeRaisedEl) homeRaisedEl.innerText = '$' + (raised / 1e6).toFixed(1) + 'M';
+    if (homeProgressBar) homeProgressBar.style.width = percent + '%';
+    if (homeProgressText) homeProgressText.innerText = percent + '% завершено';
+    if (projectRaisedDisplay) projectRaisedDisplay.innerText = '$' + (raised / 1e6).toFixed(1) + 'M';
+    if (projectProgressValue) projectProgressValue.innerText = percent + '%';
     if (circle) {
         const dashOffset = 126 - (126 * percent / 100);
         circle.setAttribute('stroke-dashoffset', dashOffset);
     }
 
-    const userShare = platform.userData.projectShares?.['millennium-tower'] || 10;
-    const totalShares = 1000000;
-    const userPercent = (userShare / totalShares * 100).toFixed(2);
-    document.getElementById('my-share-percentage').innerText = userPercent + '%';
-    document.getElementById('my-invested-amount').innerText = userShare * 1000 + ' SKY';
-    document.getElementById('my-pending-profit').innerText = platform.pendingProfit + ' SKY';
-    document.getElementById('my-profit-share').innerText = platform.pendingProfit + ' SKY';
-    document.getElementById('my-profit-usd').innerText = '$' + (platform.pendingProfit * SKY_TO_USD).toFixed(2);
+    const userShares = platform.userData.projectShares?.['millennium-tower'] || 0;
+    const userPercent = (userShares / PROJECT_TOTAL_SHARES * 100).toFixed(4);
+    const userProfit = calculateUserProfit('millennium-tower');
+
+    const mySharePercentage = document.getElementById('my-share-percentage');
+    const myInvestedAmount = document.getElementById('my-invested-amount');
+    const myPendingProfit = document.getElementById('my-pending-profit');
+    const myProfitShare = document.getElementById('my-profit-share');
+    const myProfitUsd = document.getElementById('my-profit-usd');
+    const nextProfitEstimate = document.getElementById('next-profit-estimate');
+
+    if (mySharePercentage) mySharePercentage.innerText = userPercent + '%';
+    if (myInvestedAmount) myInvestedAmount.innerText = userShares * 1000 + ' SKY';
+    if (myPendingProfit) myPendingProfit.innerText = platform.pendingProfit + ' SKY';
+    if (myProfitShare) myProfitShare.innerText = platform.pendingProfit + ' SKY';
+    if (myProfitUsd) myProfitUsd.innerText = '$' + (platform.pendingProfit * SKY_TO_USD).toFixed(2);
+    if (nextProfitEstimate) nextProfitEstimate.innerText = '$' + userProfit.toFixed(2);
 }
 
 function updateWithdrawHistory(history) {
@@ -2043,42 +2305,221 @@ function updateWithdrawHistory(history) {
     let html = '';
     history.forEach(item => {
         const date = item.timestamp ? new Date(item.timestamp.seconds ? item.timestamp.seconds * 1000 : item.timestamp) : new Date();
+        const statusText = item.status === 'completed' ? 'Завершено' : item.status === 'pending' ? 'В обработке' : item.status;
+        const methodText = item.method === 'crypto' ? 'Криптовалюта' : item.method === 'bank' ? 'Банковская карта' : item.method;
+
         html += `
-            <div class="withdraw-history-item">
-                <div>${date.toLocaleDateString()}</div>
-                <div>${item.amount} SKY</div>
-                <div>${item.method}</div>
-                <div style="color: ${item.status === 'completed' ? 'var(--success)' : 'var(--warning)'}">${item.status}</div>
+            <div class="withdraw-history-item" style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 5px; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.1);">
+                <div style="font-size: 0.8rem;">${date.toLocaleDateString()}</div>
+                <div style="font-size: 0.8rem;">${item.amount} SKY</div>
+                <div style="font-size: 0.8rem;">${methodText}</div>
+                <div style="font-size: 0.8rem; color: ${item.status === 'completed' ? 'var(--success)' : 'var(--warning)'}">${statusText}</div>
             </div>
         `;
     });
     container.innerHTML = html;
 }
 
-// === ЗАПУСК ПРИЛОЖЕНИЯ ===
-document.addEventListener('DOMContentLoaded', function() {
+// ================== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==================
+function calculateUserProfit(projectId) {
+    const userSharePercent = calculateUserShare(projectId) / 100;
+    return PROJECT_MONTHLY_PROFIT * userSharePercent;
+}
+
+function calculateUserShare(projectId) {
+    const userShares = platform.userData.projectShares?.[projectId] || 0;
+    return (userShares / PROJECT_TOTAL_SHARES) * 100;
+}
+
+function calculateNetworkFee(method, amount) {
+    return amount * 0.02;
+}
+
+function formatTime(timestamp) {
+    if (!timestamp) return '';
+    const date = timestamp instanceof Date ? timestamp : new Date(timestamp);
+    const now = new Date();
+    const diff = now - date;
+    if (diff < 60000) return 'Только что';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)} мин назад`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)} ч назад`;
+    return date.toLocaleDateString('ru-RU');
+}
+
+function updateOnlineUsersCount(count) {
+    const countEl = document.getElementById('online-users-count');
+    if (countEl) countEl.textContent = count.toLocaleString('ru-RU');
+}
+
+function setUserOnline(online) {
+    if (currentUser && usersRef) {
+        usersRef.doc(currentUser.uid).update({
+            online: online,
+            lastSeen: firebase.firestore.FieldValue.serverTimestamp()
+        }).catch(error => console.error("Ошибка обновления статуса онлайн:", error));
+    }
+}
+
+function animatePriceChange() {
+    document.querySelectorAll('.crypto-price').forEach(el => {
+        el.style.transition = 'all 0.5s ease';
+        el.style.transform = 'scale(1.1)';
+        el.style.color = '#e74c3c';
+        setTimeout(() => {
+            el.style.transform = 'scale(1)';
+            el.style.color = '';
+        }, 500);
+    });
+}
+
+function showSection(sectionId) {
+    document.querySelectorAll('.content-section').forEach(section => {
+        section.style.display = 'none';
+        section.classList.remove('active');
+    });
+    const targetSection = document.getElementById(sectionId + '-section');
+    if (targetSection) {
+        targetSection.style.display = 'block';
+        targetSection.classList.add('active');
+    }
+}
+
+function openDepositModal() {
+    const modal = document.getElementById('deposit-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+        updateDepositReceive();
+    }
+}
+
+function updateDepositReceive() {
+    const amountUSD = parseFloat(document.getElementById('deposit-usd')?.value) || 0;
+    const skyAmount = Math.floor(amountUSD * USD_TO_SKY);
+    const receiveEl = document.getElementById('deposit-receive');
+    if (receiveEl) receiveEl.innerText = skyAmount.toLocaleString() + ' SKY';
+}
+
+// ================== ПОМОЩЬ ==================
+function showHelp() {
+    let helpModal = document.getElementById('help-modal');
+    if (!helpModal) {
+        helpModal = document.createElement('div');
+        helpModal.id = 'help-modal';
+        helpModal.className = 'modal';
+        helpModal.innerHTML = `
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3 style="color: var(--secondary);"><i class="fas fa-info-circle"></i> НАВИГАЦИЯ ПО CRYPTOVERSE</h3>
+                    <button class="close-modal" onclick="document.getElementById('help-modal').style.display='none'">&times;</button>
+                </div>
+                <div style="padding: 15px 0; max-height: 60vh; overflow-y: auto;">
+                    <!-- Содержимое помощи как в оригинале -->
+                </div>
+                <div style="text-align: center; margin-top: 15px;">
+                    <button class="btn btn-primary" onclick="document.getElementById('help-modal').style.display='none'">
+                        <i class="fas fa-check"></i> ПОНЯТНО
+                    </button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(helpModal);
+    }
+    helpModal.style.display = 'flex';
+}
+
+window.toggleAccordion = function (header) {
+    const content = header.nextElementSibling;
+    const icon = header.querySelector('i');
+    if (content.style.maxHeight && content.style.maxHeight !== '0px') {
+        content.style.maxHeight = '0';
+        content.style.opacity = '0';
+        content.style.marginTop = '0';
+        icon.style.transform = 'rotate(0deg)';
+    } else {
+        content.style.maxHeight = content.scrollHeight + 'px';
+        content.style.opacity = '1';
+        content.style.marginTop = '8px';
+        icon.style.transform = 'rotate(90deg)';
+    }
+};
+
+// ================== ЗАГРУЗКА ==================
+function showLoading(message = "Загрузка...") {
+    hideLoading();
+    const loadingEl = document.createElement('div');
+    loadingEl.id = 'global-loading';
+    loadingEl.innerHTML = `
+        <div class="loading-overlay">
+            <div class="loading-spinner">
+                <div class="spinner"></div>
+                <div class="loading-text">${message}</div>
+            </div>
+        </div>
+    `;
+    const style = document.createElement('style');
+    style.textContent = `
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            backdrop-filter: blur(5px);
+        }
+        .loading-spinner { text-align: center; }
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(0, 201, 255, 0.3);
+            border-top: 3px solid var(--secondary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        .loading-text { color: var(--secondary); font-size: 1.1rem; animation: pulse 1.5s ease-in-out infinite; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    `;
+    document.head.appendChild(style);
+    document.body.appendChild(loadingEl);
+}
+
+function hideLoading() {
+    const loadingEl = document.getElementById('global-loading');
+    if (loadingEl) loadingEl.remove();
+}
+
+// ================== ГЛОБАЛЬНЫЕ ФУНКЦИИ ДЛЯ ONCLICK ==================
+window.showFullProjectDetail = showFullProjectDetail;
+window.openWheelGame = openWheelGame;
+window.closeWheelGame = closeWheelGame;
+window.joinWheelGameModal = joinWheelGameModal;
+window.claimProfit = claimProfit;
+window.toggleProfitSection = toggleProfitSection;
+window.showHelp = showHelp;
+window.handleDealAction = handleDealAction;
+window.deleteDeal = deleteDeal;
+window.markNotificationRead = markNotificationRead;
+window.toggleAccordion = toggleAccordion;
+
+// ================== ЗАПУСК ==================
+document.addEventListener('DOMContentLoaded', () => {
     showLoading("Инициализация платформы...");
-    
-    setTimeout(() => {
-        initPlatform();
-    }, 1000);
+    setTimeout(initPlatform, 500);
 });
 
 setTimeout(() => {
-    const loadingEl = document.getElementById('global-loading');
-    if (loadingEl) {
+    if (document.getElementById('global-loading')) {
         hideLoading();
         showError("Не удалось загрузить приложение. Обновите страницу.");
         initPlatformOffline();
     }
 }, 10000);
 
-window.addEventListener('beforeunload', function() {
-    setUserOnline(false);
-});
-
-window.addEventListener('focus', function() {
-    if (currentUser) {
-        setUserOnline(true);
-    }
-});
+window.addEventListener('beforeunload', () => setUserOnline(false));
+window.addEventListener('focus', () => { if (currentUser) setUserOnline(true); });

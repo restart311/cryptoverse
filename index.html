@@ -1201,6 +1201,28 @@
         </div>
     </div>
 
+    <!-- Модалка для частичной сделки (создаётся также динамически, но можно и здесь) -->
+    <div class="modal" id="partial-deal-modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 style="color: var(--secondary);"><i class="fas fa-cut"></i> ЧАСТИЧНАЯ СДЕЛКА</h3>
+                <button class="close-modal"
+                    onclick="document.getElementById('partial-deal-modal').style.display='none'">&times;</button>
+            </div>
+            <div style="padding: 15px;">
+                <p id="partial-deal-info"></p>
+                <div class="form-group">
+                    <label>Количество (<span id="partial-max-quantity"></span>):</label>
+                    <input type="number" id="partial-quantity" min="1" step="1" value="1">
+                </div>
+                <div style="background: rgba(0,0,0,0.3); padding: 12px; border-radius: 12px; margin: 15px 0;">
+                    <p>Сумма сделки: <span id="partial-total"></span> SKY</p>
+                </div>
+                <button class="btn btn-success btn-block" id="btn-execute-partial">ПОДТВЕРДИТЬ</button>
+            </div>
+        </div>
+    </div>
+
 </body>
 
 </html>
